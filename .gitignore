@@ -2,6 +2,9 @@
 node_modules/
 dist/
 .vite/
+# 扩展发行清单由打包脚本生成（含每次构建的 sizeBytes/sha256），不进源码历史
+extension/release.json
+extension/.release.json.pending
 
 # 真实配置与密钥：只提交 .env.example
 .env*
