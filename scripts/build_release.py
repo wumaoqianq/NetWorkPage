@@ -189,12 +189,14 @@ def build_release(root, output, version, tag, track, extension_version,
     for path in files:
         inspect_content(path.relative_to(root), path.read_bytes(), secrets)
 
-    # 3) 生成服务包
+    # 3) 生成服务包；扩展 ZIP 同时作为发布资产复制到输出目录（同字节）
     payload = archive_bytes(files, root)
     output.mkdir(parents=True, exist_ok=True)
     server_name = f'{PROJECT_ID}-{tag}.tar.gz'
     (output / server_name).write_bytes(payload)
     server_sha = hashlib.sha256(payload).hexdigest()
+    ext_bytes = extension_zip.read_bytes()
+    (output / extension_zip.name).write_bytes(ext_bytes)
 
     # 4) 清单（同一候选构建的版本/tag/资产）
     stamp = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).isoformat()
