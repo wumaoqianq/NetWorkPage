@@ -1,0 +1,11 @@
+[Unit]
+Description=Check the short-lived Website Workspace certificate twice daily
+
+[Timer]
+OnCalendar=*-*-* 00,12:00:00
+RandomizedDelaySec=30m
+Persistent=true
+Unit=website-workspace-tls-renew.service
+
+[Install]
+WantedBy=timers.target

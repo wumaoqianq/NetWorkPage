@@ -1,0 +1,23 @@
+[Unit]
+Description=Delayed orphan media cleanup for Website Workspace
+After=website-workspace.service
+
+[Service]
+Type=oneshot
+User=website-workspace
+Group=website-workspace
+WorkingDirectory=/opt/website-workspace/server
+EnvironmentFile=/etc/website-workspace.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/flock -w 240 /var/lib/website-workspace/maintenance.lock /opt/website-workspace/.venv/bin/python manage.py cleanup_media
+UMask=0077
+MemoryMax=96M
+CPUQuota=20%
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=300
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/website-workspace

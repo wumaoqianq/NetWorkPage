@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>收藏到工作台</title><link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="capture.css"></head>
+<body class="capture">
+  <header><img src="icons/icon-32.png" width="32" height="32" alt=""><div><h1>收藏到工作台</h1><p id="connection-label">正在读取连接…</p></div><span id="connected-dot" class="status-dot"></span></header>
+  <main>
+    <p id="target-issue" class="notice error" role="alert" hidden></p>
+    <section class="card page-summary">
+      <strong id="page-title">正在读取目标…</strong>
+      <small id="page-address" class="muted"></small>
+      <p class="hint">目标在打开本页前已固定；切换窗口或源页面导航都不会改存别的网站。</p>
+    </section>
+    <section class="card" id="asset-panel" hidden>
+      <h2>自动取得的素材</h2>
+      <img id="preview-thumb" alt="当前页截图预览" hidden>
+      <p id="asset-status" class="muted"></p>
+      <div class="actions">
+        <button id="cancel-preview" class="quiet danger-text" type="button" hidden>这次不带截图</button>
+        <button id="cancel-icon" class="quiet danger-text" type="button" hidden>这次不带图标</button>
+      </div>
+      <p class="hint">截图/图标已先存本地，关闭本页不会丢失；只有服务端确认或你明确移除才删除。</p>
+    </section>
+    <form id="capture-form">
+      <section class="card">
+        <label for="category">分类（工作台自定义分类）</label>
+        <select id="category"><option value="">未分类</option></select>
+        <p id="options-hint" class="hint">正在读取当前账号分类…</p>
+        <label for="notes">我的备注 <span id="notes-count" class="character-count">0/2000</span></label>
+        <textarea id="notes" rows="4" maxlength="2000" placeholder="给自己的备注，仅当前账号可见"></textarea>
+        <label class="check"><input type="checkbox" id="later"> 稍后整理（放入收件箱，不直接进网站库）</label>
+        <label class="check"><input type="checkbox" id="no-auto-icon"> 不要自动补齐网站图标（缺图时保留字母占位，由我以后手动处理）</label>
+        <p class="hint">名称、简介自动取得；截图/图标在打开本页前已固定目标并先存本地，素材失败不阻塞文字收藏。缺图时工作台会在后台尝试从网站公开图标补齐，不影响这次收藏。</p>
+      </section>
+      <div class="save-footer actions">
+        <button id="save" class="primary" type="submit">收藏到网站库</button>
+        <button id="settings" class="quiet" type="button">连接设置</button>
+      </div>
+    </form>
+    <section id="result" class="card" hidden>
+      <h2 id="result-title">已保存到本地</h2>
+      <p id="result-detail" class="muted"></p>
+      <div class="actions">
+        <button id="view" class="primary" type="button" hidden>查看收藏</button>
+        <button id="back" class="quiet" type="button">返回原网页</button>
+        <button id="retry" class="quiet" type="button" hidden>立即重试</button>
+        <button id="cancel" class="quiet danger-text" type="button" hidden>取消这次收藏</button>
+      </div>
+    </section>
+    <p id="message" role="status"></p>
+    <p class="privacy">关闭本页不会取消已保存的收藏；后台会在联网后幂等提交。切换账号不会把旧任务投到别的账号。</p>
+  </main>
+  <script type="module" src="capture.js"></script>
+</body>
+</html>

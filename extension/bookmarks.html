@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>一键导入浏览器收藏 · 网站工作台</title><link rel="stylesheet" href="styles.css"></head>
+<body class="options">
+  <header><img src="icons/icon-48.png" width="40" height="40" alt=""><div><h1>从当前浏览器导入收藏</h1><p>不用导出、不找文件，不改动原收藏</p></div><button id="settings">连接设置</button></header>
+  <main>
+    <section class="card"><h2>1. 读取本机收藏</h2><p id="account">正在读取连接…</p><p class="hint">首次需要你同意浏览器书签权限。浏览器可能提示“读取和更改书签”，本功能只读取，不会修改或删除。</p><button id="read" class="primary" disabled>授权并读取当前浏览器收藏</button><button id="revoke" class="quiet">撤回书签读取权限</button><p id="message" role="status" aria-live="polite"></p></section>
+    <section id="preview" class="card" hidden><h2>2. 选择范围并预览</h2><label for="folder">导入哪个文件夹</label><select id="folder"></select><p id="summary"></p><p class="hint">当前预览留在本机，点击确认后才发送；工作台已有的网址会跳过，不覆盖原有说明。</p><ul id="sample" class="bookmark-sample"></ul><button id="confirm" class="primary" disabled>确认导入到连接的账号</button></section>
+    <section id="progress" class="card" hidden><h2>导入进度</h2><p id="destination"></p><progress id="bar" value="0" max="1"></progress><p id="counts"></p><p id="import-error" class="error"></p><div class="actions"><button id="resume" class="primary">继续导入</button><button id="stop">停止剩余导入</button><button id="open-workspace">回到工作台查看</button></div><p class="hint">较多收藏会自动分批；网络失败可继续，重试不会重复新增。停止只影响剩余批次，已完成的收藏仍保留。</p></section>
+  </main><script src="bookmarks-page.js" type="module"></script>
+</body></html>

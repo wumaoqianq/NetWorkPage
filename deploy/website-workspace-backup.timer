@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily encrypted Website Workspace backup
+
+[Timer]
+OnCalendar=*-*-* 03:15:00
+RandomizedDelaySec=10m
+Persistent=true
+Unit=website-workspace-backup.service
+
+[Install]
+WantedBy=timers.target

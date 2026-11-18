@@ -1,0 +1,22 @@
+[Unit]
+Description=Bounded Website Workspace enrichment jobs
+After=website-workspace.service
+
+[Service]
+Type=oneshot
+User=website-workspace
+Group=website-workspace
+WorkingDirectory=/opt/website-workspace/server
+EnvironmentFile=/etc/website-workspace.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/flock -n -E 0 /var/lib/website-workspace/maintenance.lock /opt/website-workspace/.venv/bin/python manage.py runjobs --limit 10
+UMask=0077
+MemoryMax=128M
+CPUQuota=25%
+Nice=10
+TimeoutStartSec=180
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/website-workspace

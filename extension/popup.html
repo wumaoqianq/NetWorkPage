@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>收藏到网站工作台</title><link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="popup.css"></head>
+<body class="popup">
+  <header><img src="icons/icon-32.png" width="28" height="28" alt=""><div><h1>收藏到工作台</h1><p id="connection-label">正在读取连接…</p></div><span id="connected-dot" class="status-dot"></span><button id="settings" class="quiet" aria-label="连接设置">设置</button></header>
+  <main>
+    <p id="target-issue" class="notice error" role="alert" hidden></p>
+    <section class="popup-cap">
+      <div class="summary"><img id="page-icon" alt="" hidden><span id="page-letter" class="letter">网</span><div><strong id="page-title">正在读取当前页面…</strong><small id="page-address"></small></div></div>
+      <p id="page-desc" class="desc" hidden></p>
+    </section>
+    <section id="shot" class="shot" data-shot="capturing">
+      <img id="shot-img" alt="当前页截图预览" hidden>
+      <div class="shot-state"><span class="dot"></span><span id="shot-label" role="status">正在截图…</span></div>
+      <p id="shot-note" class="shot-note" hidden></p>
+      <div class="shot-actions"><button id="shot-retry" type="button" class="quiet" hidden>重新截图</button><button id="shot-drop" type="button" class="quiet" hidden>这次不带截图</button></div>
+    </section>
+    <form id="capture-form" class="cap-form">
+      <label for="category">分类（工作台自定义分类）</label>
+      <select id="category"><option value="">未分类</option></select>
+      <p id="options-hint" class="hint">正在读取当前账号分类…</p>
+      <label for="notes">我的备注 <span id="notes-count" class="character-count">0/2000</span></label>
+      <textarea id="notes" rows="3" maxlength="2000" placeholder="给自己的备注，仅当前账号可见"></textarea>
+      <label class="check"><input type="checkbox" id="later"> 稍后整理（放入收件箱，不直接进网站库）</label>
+      <label class="check"><input type="checkbox" id="no-auto-icon"> 不要自动补齐网站图标</label>
+      <div class="actions"><button id="save" class="primary" type="submit">收藏到网站库</button></div>
+      <p class="hint">点收藏后文字先可靠存到本机，截图/图标随后在后台同步；关闭本弹窗也会继续。不会打开新标签页或跳转工作台。</p>
+    </form>
+    <section id="cap-result" class="cap-result" hidden>
+      <div id="cap-result-title" class="title"></div>
+      <div id="cap-result-detail" class="detail"></div>
+    </section>
+    <p id="message" role="status"></p>
+  </main>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+{
+  "name": "prototype",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && node scripts/prepare-sites-build.mjs",
+    "preview": "vite preview",
+    "test": "node --test tests/model.test.mjs tests/dialog-stack.test.mjs tests/api.test.mjs tests/workspace-loader.test.mjs tests/bookmark-import.test.mjs tests/screenshot-resource.test.mjs tests/screenshot-entry.test.mjs tests/card-preferences.test.mjs tests/layout.test.mjs tests/layout-preferences.test.mjs",
+    "test:sites": "node --test tests/sites-worker.test.mjs"
+  },
+  "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
+    "@vitejs/plugin-react": "5.0.4",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "simple-icons": "^16.35.0",
+    "vite": "6.4.2"
+  }
+}
