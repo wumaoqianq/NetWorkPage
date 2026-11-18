@@ -1,9 +1,9 @@
 [Unit]
-Description=Weekly delayed media cleanup for Website Workspace
+Description=Daily delayed orphan media cleanup for Website Workspace
 
 [Timer]
-OnCalendar=Mon *-*-* 04:45:00
-RandomizedDelaySec=1800
+OnCalendar=*-*-* 04:20:00
+RandomizedDelaySec=15m
 Persistent=true
 Unit=website-workspace-media-cleanup.service
 

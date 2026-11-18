@@ -6,10 +6,10 @@ After=website-workspace.service
 Type=oneshot
 User=website-workspace
 Group=website-workspace
-WorkingDirectory=/opt/website-workspace/server
+WorkingDirectory=/opt/website-workspace/current/server
 EnvironmentFile=/etc/website-workspace.env
 Environment=PYTHONDONTWRITEBYTECODE=1
-ExecStart=/usr/bin/flock -n -E 0 /var/lib/website-workspace/maintenance.lock /opt/website-workspace/.venv/bin/python manage.py runjobs --limit 10
+ExecStart=/usr/bin/flock -n -E 0 /var/lib/website-workspace/maintenance.lock /opt/website-workspace/current/.venv/bin/python manage.py runjobs --limit 10
 UMask=0077
 MemoryMax=128M
 CPUQuota=25%

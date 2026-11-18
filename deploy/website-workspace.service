@@ -1,5 +1,5 @@
 [Unit]
-Description=Website Workspace Django application
+Description=Website Workspace Django application (/opt/website-workspace)
 After=network.target
 StartLimitIntervalSec=300
 StartLimitBurst=5
@@ -8,12 +8,13 @@ StartLimitBurst=5
 Type=simple
 User=website-workspace
 Group=website-workspace
-WorkingDirectory=/opt/website-workspace/server
+# current 由升级脚本原子切换；升级期间本服务保持维护状态
+WorkingDirectory=/opt/website-workspace/current/server
 EnvironmentFile=/etc/website-workspace.env
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=MALLOC_ARENA_MAX=2
-ExecStart=/opt/website-workspace/.venv/bin/gunicorn config.wsgi:application --bind 127.0.0.1:8000 --workers 1 --worker-class gthread --threads 2 --timeout 45 --max-requests 1000 --max-requests-jitter 100 --error-logfile -
+ExecStart=/opt/website-workspace/current/.venv/bin/gunicorn config.wsgi:application --bind 127.0.0.1:8000 --workers 1 --worker-class gthread --threads 2 --timeout 45 --max-requests 1000 --max-requests-jitter 100 --error-logfile -
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=60
@@ -34,4 +35,3 @@ LockPersonality=true
 
 [Install]
 WantedBy=multi-user.target
-

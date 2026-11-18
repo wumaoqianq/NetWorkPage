@@ -6,12 +6,12 @@ After=website-workspace.service
 Type=oneshot
 User=website-workspace
 Group=website-workspace
-WorkingDirectory=/opt/website-workspace
+WorkingDirectory=/opt/website-workspace/current
 EnvironmentFile=/etc/website-workspace.env
 Environment=PYTHONDONTWRITEBYTECODE=1
-ExecStart=/usr/bin/flock -w 240 /var/lib/website-workspace/maintenance.lock /opt/website-workspace/.venv/bin/python scripts/backup.py create
+ExecStart=/usr/bin/flock -w 240 /var/lib/website-workspace/maintenance.lock /opt/website-workspace/current/.venv/bin/python scripts/backup.py create
 UMask=0077
-MemoryMax=128M
+MemoryMax=128MB
 CPUQuota=25%
 Nice=10
 IOSchedulingClass=idle
