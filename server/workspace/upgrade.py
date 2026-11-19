@@ -24,6 +24,7 @@ from django.http import JsonResponse
 from workspace import release_manifest
 
 STAGES_BEFORE_MIGRATION = {'verified', 'backed_up'}
+ENV_FILE = '/etc/website-workspace.env'
 
 
 def release_repo():
@@ -131,7 +132,9 @@ def _run(command, *, timeout=1800, as_user=None, check=True, env_extra=None):
     if env_extra:
         env.update(env_extra)
     if as_user:
-        command = ['sudo', '-u', as_user, '--'] + command
+        # sudo -u 默认丢弃环境变量（BACKUP_KEY/SECRET_KEY/DATA_DIR 等），
+        # 改用 runuser 保留当前 root 进程已加载的 env-file 环境。
+        command = ['runuser', '-u', as_user, '--'] + command
     proc = subprocess.run(command, capture_output=True, text=True, timeout=timeout, env=env)
     output = (proc.stdout or '') + (proc.stderr or '')
     if check and proc.returncode != 0:
@@ -285,7 +288,8 @@ def verify_backup(backup_file):
         python = _venv_python(current_release())
         _run([python, str(current_release() / 'scripts' / 'backup.py'), 'restore',
               str(backup_file), str(target),
-              '--media-directory', str(target / 'media')],
+              '--media-directory', str(target / 'media'),
+              '--env-file', ENV_FILE],
              timeout=900, as_user='website-workspace')
         database = target / 'workspace.sqlite3'
         if not database.exists():
@@ -302,7 +306,8 @@ def verify_backup(backup_file):
 
 def create_backup():
     python = _venv_python(current_release())
-    _run([python, str(current_release() / 'scripts' / 'backup.py'), 'create'],
+    _run([python, str(current_release() / 'scripts' / 'backup.py'), 'create',
+          '--env-file', ENV_FILE],
          timeout=1800, as_user='website-workspace')
     backups = sorted((data_dir() / 'backups').glob('*.wwb'), key=lambda p: p.stat().st_mtime)
     if not backups:
@@ -354,7 +359,8 @@ def rollback(reason, previous_release, backup_file):
         python = _venv_python(previous_release)
         _run([python, str(Path(previous_release) / 'scripts' / 'backup.py'), 'restore',
               str(backup_file), str(data_dir() / '.rollback-restore'),
-              '--media-directory', str(data_dir() / 'media')], timeout=1800)
+              '--media-directory', str(data_dir() / 'media'),
+              '--env-file', ENV_FILE], timeout=1800)
         for name in ('workspace.sqlite3-wal', 'workspace.sqlite3-shm'):
             (data_dir() / name).unlink(missing_ok=True)
     if previous_release:
@@ -362,7 +368,9 @@ def rollback(reason, previous_release, backup_file):
     _systemctl('start', 'website-workspace')
     if _health_ok(Path(previous_release).name):
         clear_maintenance()
-        write_state(stage='rolled_back', reason=reason, writesReopened=True)
+        migrated = bool(read_state().get('migrated'))
+        write_state(stage='rolled_back', reason=reason, writesReopened=migrated,
+                    rollbackRestoredData=migrated)
         raise RuntimeError(f'升级失败已回退到 {Path(previous_release).name}：{reason}')
     write_state(stage='rollback_failed', reason=reason)
     raise RuntimeError(f'回退后健康检查仍失败，保持维护状态待人工处理：{reason}')
@@ -373,8 +381,9 @@ def apply(version, backup_file=None):
     previous = current_release()
     previous_version = previous.name if previous else ''
     state = read_state()
-    if state.get('writesReopened') and state.get('stage') not in (None, 'complete'):
-        raise RuntimeError('上次升级已恢复写入；如需再次回退请人工确认，禁止自动用旧备份覆盖新数据')
+    if state.get('writesReopened') and state.get('rollbackRestoredData'):
+        raise RuntimeError('上次回退已从备份恢复数据并重新开放写入；'
+                           '如需再次回退必须人工确认，禁止自动用旧备份覆盖新数据')
 
     staging = app_root() / 'releases' / f'.staging-{version}'
     if not staging.exists():
