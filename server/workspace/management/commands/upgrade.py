@@ -13,13 +13,13 @@ class Command(BaseCommand):
     help = '预检或执行到指定版本的在线升级（保留数据库、媒体、账号、配对与配置）'
 
     def add_arguments(self, parser):
-        parser.add_argument('--version', required=True, help='目标版本，如 1.10.0-rc.2')
+        parser.add_argument('--release-version', required=True, help='目标版本，如 1.10.0-rc.3')
         parser.add_argument('--precheck', action='store_true', help='只做预检，不动线上数据或服务')
         parser.add_argument('--backup', help='复用已有加密备份路径（默认现做一份并验证）')
         parser.add_argument('--json', action='store_true')
 
     def handle(self, *args, **options):
-        version = options['version'].lstrip('v')
+        version = options['release_version'].lstrip('v')
         try:
             release_manifest.parse_version(version)
         except release_manifest.ManifestError as exc:
@@ -39,7 +39,7 @@ class Command(BaseCommand):
             for asset in notes['assets']:
                 self.stdout.write(f'  资产 {asset["name"]} {asset["bytes"]} B sha256={asset["sha256"][:16]}…')
             self.stdout.write(f'暂存目录: {notes["staging"]}')
-            self.stdout.write('执行升级: manage.py upgrade --version ' + version)
+            self.stdout.write('执行升级: manage.py upgrade --release-version ' + version)
             return
 
         self.stdout.write(f'开始升级 {upgrade.current_version()} -> {version}（进入维护窗口）')

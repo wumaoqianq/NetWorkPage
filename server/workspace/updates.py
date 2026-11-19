@@ -29,8 +29,8 @@ def status(request):
         'upstream': 'unknown',
         'commands': {
             'check': 'manage.py checkupdate --track stable',
-            'precheck': 'manage.py upgrade --version <版本> --precheck',
-            'upgrade': 'manage.py upgrade --version <版本>',
+            'precheck': 'manage.py upgrade --release-version <版本> --precheck',
+            'upgrade': 'manage.py upgrade --release-version <版本>',
         },
     }
     try:

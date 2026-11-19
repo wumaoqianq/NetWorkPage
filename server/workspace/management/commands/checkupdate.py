@@ -80,7 +80,7 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS(
                 f'可用版本: {latest["version"]} (tag {latest["tag"]})　发布: {latest.get("publishedAt", "")}'))
             self.stdout.write(f'发布说明: {latest.get("url", "")}')
-            self.stdout.write(f'预检: manage.py upgrade --version {latest["version"]} --precheck')
+            self.stdout.write(f'预检: manage.py upgrade --release-version {latest["version"]} --precheck')
         elif result.get('status') == 'current':
             self.stdout.write(self.style.SUCCESS('已是最新版本，无需升级。'))
         else:
