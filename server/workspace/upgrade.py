@@ -311,8 +311,9 @@ def verify_backup(backup_file):
 
 def create_backup():
     python = _venv_python(current_release())
-    _run([python, str(current_release() / 'scripts' / 'backup.py'), '--env-file', ENV_FILE,
-          'create'],
+    # 不传 --env-file：该文件为 600 root-only，应用用户不可读；
+    # runuser 会保留调用进程已从同一文件加载的环境变量（含 BACKUP_KEY/DATA_DIR）。
+    _run([python, str(current_release() / 'scripts' / 'backup.py'), 'create'],
          timeout=1800, as_user='website-workspace')
     backups = sorted((data_dir() / 'backups').glob('*.wwb'), key=lambda p: p.stat().st_mtime)
     if not backups:
