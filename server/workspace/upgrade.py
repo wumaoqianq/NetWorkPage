@@ -501,8 +501,12 @@ def apply(version, backup_file=None):
     except Exception as exc:  # noqa: BLE001 - 统一走回退并记录
         current_state = read_state()
         if current_state.get('rollbackAttempted'):
-            # 回退过程中自身抛出的异常：不再重复回退，避免二次破坏现场
-            write_state(stage='failed', error=str(exc)[:400])
+            # 回退已经执行过：不再重复回退，避免二次破坏现场。
+            # 若回退本身成功（stage=rolled_back），保留该阶段，只记录失败原因。
+            if current_state.get('stage') == 'rolled_back':
+                write_state(error=str(exc)[:400])
+            else:
+                write_state(stage='failed', error=str(exc)[:400])
             raise
         write_state(stage='failed', error=str(exc)[:400])
         rollback(str(exc)[:300], previous, backup_file)
