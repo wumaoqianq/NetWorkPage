@@ -280,33 +280,44 @@ def install_release(staging, version):
     return target
 
 
-def _restore_into(backup_file, target, release=None):
-    """用备份脚本恢复到一个尚不存在的 target；媒体默认恢复到 <target>.media 兄弟目录。"""
-    target = Path(target)
-    media_root = Path(str(target) + '.media')
-    python = _venv_python(release or current_release())
-    _run([python, str(Path(release or current_release()) / 'scripts' / 'backup.py'),
-          'restore', str(backup_file), str(target)],
+def _prepare_workdir(path):
+    """创建应用用户可写的恢复工作目录（/tmp 下 root 700 目录不可写）。"""
+    path = Path(path)
+    if path.exists():
+        shutil.rmtree(path, ignore_errors=True)
+    path.mkdir(parents=True, exist_ok=True)
+    _run(['chown', '-R', 'website-workspace:website-workspace', str(path)], timeout=120)
+    return path
+
+
+def _restore_into(backup_file, workdir, release=None):
+    """用备份脚本把数据库恢复到 <workdir>/workspace.sqlite3；媒体到 <dir>/workspace.sqlite3.media。"""
+    release = release or current_release()
+    workdir = _prepare_workdir(workdir)
+    target_db = workdir / 'workspace.sqlite3'
+    media_root = Path(str(target_db) + '.media')
+    _run([_venv_python(release), str(Path(release) / 'scripts' / 'backup.py'),
+          'restore', str(backup_file), str(target_db)],
          timeout=1800, as_user='website-workspace')
-    database = target / 'workspace.sqlite3'
-    if not database.exists():
+    if not target_db.is_file():
         raise RuntimeError('恢复未得到数据库文件')
-    code, output = _run(['sqlite3', str(database), 'pragma integrity_check;'], timeout=120, check=False)
+    code, output = _run(['sqlite3', str(target_db), 'pragma integrity_check;'], timeout=120, check=False)
     if 'ok' not in output:
         raise RuntimeError(f'恢复数据库完整性检查失败: {output[-300:]}')
     media_files = sum(1 for _ in media_root.rglob('*') if _.is_file()) if media_root.exists() else 0
-    return {'root': target, 'database': database, 'media': media_root, 'mediaFiles': media_files}
+    return {'workdir': workdir, 'database': target_db, 'media': media_root, 'mediaFiles': media_files}
 
 
 def verify_backup(backup_file):
-    """实际试恢复一次加密备份到临时目录，确认数据库与媒体均可还原。"""
-    temporary = Path(tempfile.mkdtemp(prefix='ww-restore-'))
+    """实际试恢复一次加密备份，确认数据库与媒体均可还原（在 DATA_DIR 下进行，结束后清理）。"""
+    workdir = data_dir() / '.verify-restore'
     try:
-        result = _restore_into(backup_file, temporary / 'restored')
+        result = _restore_into(backup_file, workdir)
         return {'database': str(result['database']), 'mediaFiles': result['mediaFiles'],
                 'integrity': 'ok'}
     finally:
-        shutil.rmtree(temporary, ignore_errors=True)
+        shutil.rmtree(workdir, ignore_errors=True)
+        shutil.rmtree(Path(str(workdir / 'workspace.sqlite3') + '.media'), ignore_errors=True)
 
 
 def create_backup():
@@ -365,8 +376,6 @@ def rollback(reason, previous_release, backup_file):
         # 先成对恢复到旁路目录并校验，再原子替换；失败现场另存，绝不用未校验数据覆盖线上
         stamp = time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())
         restore_dir = data_dir() / f'.rollback-restore-{stamp}'
-        shutil.rmtree(restore_dir, ignore_errors=True)
-        shutil.rmtree(Path(str(restore_dir) + '.media'), ignore_errors=True)
         restored = _restore_into(backup_file, restore_dir, release=previous_release)
         data = data_dir()
         for name in ('workspace.sqlite3-wal', 'workspace.sqlite3-shm'):
@@ -380,6 +389,8 @@ def rollback(reason, previous_release, backup_file):
             os.replace(media, data / f'media.failed-{stamp}')
         if restored['media'].exists():
             os.replace(restored['media'], media)
+        shutil.rmtree(restored['workdir'], ignore_errors=True)
+        shutil.rmtree(restored['media'], ignore_errors=True)
         _run(['chown', '-R', 'website-workspace:website-workspace', str(data)], timeout=600, check=False)
         write_state(stage='rollback_restored', rollbackStamp=stamp,
                     rollbackMediaFiles=restored['mediaFiles'])
