@@ -1,0 +1,410 @@
+"""自建服务在线升级引擎：预检、维护窗口、备份验证、迁移、原子切换、健康检查与分阶段回退。
+
+原则（对应 docs/github-release-and-online-upgrade.md §2）：
+- 仓库与发布公钥在部署时固定；不从待安装包接受新公钥。
+- 预检不动线上数据或服务；只有预检通过才进入维护窗口。
+- 升级前创建**并实际试恢复**加密备份，确认数据库与媒体可还原。
+- 停写后迁移、切换、健康检查都通过才恢复流量与定时器。
+- 失败按阶段回退；恢复写入后绝不自动用旧备份覆盖新数据。
+- 不轮换密钥、不重置账号或配对、不清浏览器 Outbox。
+"""
+import json
+import os
+import shutil
+import subprocess
+import tarfile
+import tempfile
+import time
+import urllib.request
+from pathlib import Path
+
+from django.conf import settings
+from django.http import JsonResponse
+
+from workspace import release_manifest
+
+STAGES_BEFORE_MIGRATION = {'verified', 'backed_up'}
+
+
+def release_repo():
+    return os.environ.get('RELEASE_REPO', 'wumaoqianq/NetWorkPage')
+
+
+def release_track():
+    return os.environ.get('RELEASE_TRACK', 'stable')
+
+
+def public_key_pem():
+    inline = os.environ.get('RELEASE_PUBLIC_KEY', '').strip()
+    if inline:
+        return inline.encode('utf-8')
+    path = Path(os.environ.get('RELEASE_PUBLIC_KEY_FILE', '/etc/website-workspace-release.pem'))
+    if not path.is_file():
+        raise release_manifest.ManifestError(f'缺少发布公钥: {path}（部署时固定安装，不从安装包读取）')
+    return path.read_bytes()
+
+
+def app_root():
+    return Path(os.environ.get('APP_ROOT', '/opt/website-workspace'))
+
+
+def current_release():
+    link = app_root() / 'current'
+    if link.exists():
+        return link.resolve()
+    return None
+
+
+def current_version():
+    release = current_release()
+    if not release:
+        return 'unknown'
+    return release.name
+
+
+def data_dir():
+    return Path(settings.DATA_DIR)
+
+
+def maintenance_flag():
+    return data_dir() / 'maintenance.on'
+
+
+def state_path():
+    return data_dir() / 'upgrade-state.json'
+
+
+def is_maintenance():
+    return maintenance_flag().exists()
+
+
+def set_maintenance(reason):
+    flag = maintenance_flag()
+    flag.write_text(json.dumps({'since': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+                                'reason': reason}, ensure_ascii=False), encoding='utf-8')
+    flag.chmod(0o644)
+
+
+def clear_maintenance():
+    maintenance_flag().unlink(missing_ok=True)
+
+
+def read_state():
+    try:
+        return json.loads(state_path().read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+
+
+def write_state(**updates):
+    state = read_state()
+    state.update(updates)
+    state['updatedAt'] = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+    state_path().write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding='utf-8')
+    return state
+
+
+class MaintenanceMiddleware:
+    """维护期：写请求返回可重试 503（保留 Retry-After），读请求放行以便查看状态。"""
+
+    SAFE = {'GET', 'HEAD', 'OPTIONS'}
+    EXEMPT_PREFIX = ('/api/update', '/static/', '/api/auth/session')
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if request.method not in self.SAFE and is_maintenance():
+            path = request.path_info or ''
+            if not path.startswith(self.EXEMPT_PREFIX):
+                detail = {'error': '系统正在升级维护，请稍后重试；已保存的本地任务不会丢失',
+                          'code': 'maintenance', 'retryAfter': 60}
+                response = JsonResponse(detail, status=503)
+                response['Retry-After'] = '60'
+                response['Cache-Control'] = 'no-store'
+                return response
+        return self.get_response(request)
+
+
+def _run(command, *, timeout=1800, as_user=None, check=True, env_extra=None):
+    env = os.environ.copy()
+    if env_extra:
+        env.update(env_extra)
+    if as_user:
+        command = ['sudo', '-u', as_user, '--'] + command
+    proc = subprocess.run(command, capture_output=True, text=True, timeout=timeout, env=env)
+    output = (proc.stdout or '') + (proc.stderr or '')
+    if check and proc.returncode != 0:
+        raise RuntimeError(f'命令失败({proc.returncode}): {" ".join(command)[:160]}\n{output[-1200:]}')
+    return proc.returncode, output
+
+
+def _systemctl(action, unit):
+    return _run(['systemctl', action, unit], timeout=180)
+
+
+def _venv_python(release):
+    return str(Path(release) / '.venv' / 'bin' / 'python')
+
+
+def _download(url, dest, timeout=120):
+    request = urllib.request.Request(url, headers={'User-Agent': 'website-workspace-updater'})
+    with urllib.request.urlopen(request, timeout=timeout) as response, open(dest, 'wb') as handle:
+        shutil.copyfileobj(response, handle)
+    return dest
+
+
+def fetch_release_assets(version, workdir):
+    """按版本定位 GitHub Release，下载清单、签名与服务包；返回 (manifest, paths)。"""
+    tag = version if version.startswith('v') else f'v{version}'
+    api = f'https://api.github.com/repos/{release_repo()}/releases/tags/{tag}'
+    request = urllib.request.Request(api, headers={
+        'Accept': 'application/vnd.github+json', 'User-Agent': 'website-workspace-updater'})
+    with urllib.request.urlopen(request, timeout=20) as response:
+        release = json.loads(response.read())
+    assets = {item['name']: item['browser_download_url'] for item in release.get('assets', [])}
+    required = ('release-manifest.json', 'release-manifest.json.sig')
+    for name in required:
+        if name not in assets:
+            raise release_manifest.ManifestError(f'Release 缺少 {name}')
+    workdir = Path(workdir)
+    workdir.mkdir(parents=True, exist_ok=True)
+    _download(assets['release-manifest.json'], workdir / 'release-manifest.json', timeout=60)
+    _download(assets['release-manifest.json.sig'], workdir / 'release-manifest.json.sig', timeout=60)
+    manifest = release_manifest.load_release_manifest(workdir, public_key_pem())
+    server_assets = [a for a in manifest['assets'] if a['kind'] == 'server']
+    extension_assets = [a for a in manifest['assets'] if a['kind'] == 'extension']
+    if not server_assets or not extension_assets:
+        raise release_manifest.ManifestError('清单必须同时包含 server 与 extension 资产')
+    for asset in (server_assets[0], extension_assets[0]):
+        if asset['name'] not in assets:
+            raise release_manifest.ManifestError(f'Release 缺少资产 {asset["name"]}')
+        _download(assets[asset['name']], workdir / asset['name'], timeout=600)
+        release_manifest.verify_asset(workdir / asset['name'], asset)
+    return manifest, {'dir': workdir, 'server': workdir / server_assets[0]['name'],
+                      'extension': workdir / extension_assets[0]['name'],
+                      'manifest': manifest}
+
+
+def safe_extract(archive, destination, max_members=4000, max_bytes=256 * 1024 * 1024):
+    """安全解包：拒绝绝对路径、路径逃逸、链接、设备等特殊成员、重复成员与超展开。"""
+    destination = Path(destination).resolve()
+    destination.mkdir(parents=True, exist_ok=True)
+    seen = set()
+    total = 0
+    with tarfile.open(archive, 'r:gz') as bundle:
+        members = bundle.getmembers()
+        if len(members) > max_members:
+            raise release_manifest.ManifestError(f'归档成员过多: {len(members)}')
+        for member in members:
+            name = member.name
+            if member.issym() or member.islnk() or member.ischr() or member.isblk() or member.isfifo():
+                raise release_manifest.ManifestError(f'归档含不允许的特殊成员: {name}')
+            if name.startswith('/') or '..' in Path(name).parts or name.startswith('~'):
+                raise release_manifest.ManifestError(f'归档成员路径不安全: {name}')
+            if name in seen:
+                raise release_manifest.ManifestError(f'归档含重复成员: {name}')
+            seen.add(name)
+            if member.isfile():
+                total += member.size
+                if total > max_bytes:
+                    raise release_manifest.ManifestError('归档展开超过限制')
+        for member in members:
+            if not member.isfile():
+                continue
+            target = (destination / member.name).resolve()
+            if not target.is_relative_to(destination):
+                raise release_manifest.ManifestError(f'归档成员逃逸目标目录: {member.name}')
+            target.parent.mkdir(parents=True, exist_ok=True)
+            source = bundle.extractfile(member)
+            if source is None:
+                raise release_manifest.ManifestError(f'无法读取成员: {member.name}')
+            with open(target, 'wb') as handle:
+                shutil.copyfileobj(source, handle)
+    return destination
+
+
+def precheck(version, workdir=None):
+    """预检：下载、验签、校验资产、安全解包到释放暂存目录；不改线上数据或服务。"""
+    workdir = Path(workdir or tempfile.mkdtemp(prefix='ww-precheck-'))
+    manifest, paths = fetch_release_assets(version, workdir)
+    if manifest['version'] != version:
+        raise release_manifest.ManifestError(f'清单版本 {manifest["version"]} 与请求 {version} 不一致')
+    staging = app_root() / 'releases' / f'.staging-{version}'
+    if staging.exists():
+        shutil.rmtree(staging)
+    safe_extract(paths['server'], staging)
+    for required in ('server/manage.py', 'prototype/dist/client/index.html', 'requirements.lock',
+                     'extension/release.json', 'scripts/backup.py'):
+        if not (staging / required).exists():
+            raise release_manifest.ManifestError(f'服务包缺少运行期文件: {required}')
+    notes = {
+        'version': version,
+        'tag': manifest['tag'],
+        'commit': manifest['commit'],
+        'track': manifest['track'],
+        'staging': str(staging),
+        'assets': [{'name': a['name'], 'bytes': a['bytes'], 'sha256': a['sha256']}
+                   for a in manifest['assets']],
+        'extensionVersion': manifest['extension']['version'],
+        'currentVersion': current_version(),
+    }
+    return notes
+
+
+def _venv_ready(release):
+    python = Path(release) / '.venv' / 'bin' / 'python'
+    return python.exists()
+
+
+def install_release(staging, version):
+    """把暂存目录变成正式版本目录：建 venv、装锁定依赖。"""
+    target = app_root() / 'releases' / version
+    if target.exists():
+        shutil.rmtree(target)
+    staging.rename(target)
+    if not _venv_ready(target):
+        _run(['python3', '-m', 'venv', str(target / '.venv')], timeout=600)
+    _run([str(target / '.venv' / 'bin' / 'pip'), 'install', '--no-cache-dir', '-q',
+          '-r', str(target / 'requirements.lock')], timeout=3600)
+    _run(['chown', '-R', 'website-workspace:website-workspace', str(target)], timeout=300)
+    return target
+
+
+def verify_backup(backup_file):
+    """实际试恢复一次加密备份到临时目录，确认数据库与媒体可还原。"""
+    temporary = Path(tempfile.mkdtemp(prefix='ww-restore-'))
+    target = temporary / 'restored'
+    try:
+        python = _venv_python(current_release())
+        _run([python, str(current_release() / 'scripts' / 'backup.py'), 'restore',
+              str(backup_file), str(target),
+              '--media-directory', str(target / 'media')],
+             timeout=900, as_user='website-workspace')
+        database = target / 'workspace.sqlite3'
+        if not database.exists():
+            raise RuntimeError('试恢复未得到数据库文件')
+        code, output = _run(['sqlite3', str(database), 'pragma integrity_check;'], timeout=120, check=False)
+        if 'ok' not in output:
+            raise RuntimeError(f'试恢复数据库完整性检查失败: {output[-300:]}')
+        media = target / 'media'
+        media_files = sum(1 for _ in media.rglob('*') if _.is_file()) if media.exists() else 0
+        return {'database': str(database), 'mediaFiles': media_files, 'integrity': 'ok'}
+    finally:
+        shutil.rmtree(temporary, ignore_errors=True)
+
+
+def create_backup():
+    python = _venv_python(current_release())
+    _run([python, str(current_release() / 'scripts' / 'backup.py'), 'create'],
+         timeout=1800, as_user='website-workspace')
+    backups = sorted((data_dir() / 'backups').glob('*.wwb'), key=lambda p: p.stat().st_mtime)
+    if not backups:
+        raise RuntimeError('备份未生成')
+    return backups[-1]
+
+
+def _enabled_timers():
+    _, output = _run(['systemctl', 'list-timers', '--all', '--no-pager', '--no-legend'], timeout=60, check=False)
+    return [line.split()[-1] for line in output.splitlines()
+            if 'website-workspace' in line and line.split()]
+
+
+def _health_ok(expected_version, attempts=30):
+    python = _venv_python(current_release())
+    for _ in range(attempts):
+        time.sleep(2)
+        code, _ = _run(['systemctl', 'is-active', 'website-workspace'], check=False)
+        if code != 0:
+            continue
+        code, output = _run(['curl', '-s', '-o', '/dev/null', '-w', '%{http_code}',
+                             'http://127.0.0.1:8000/api/auth/session'], timeout=30, check=False)
+        if '200' in output and current_version() == expected_version:
+            return True
+    return False
+
+
+def _migrate(release):
+    _run([_venv_python(release), 'manage.py', 'migrate', '--noinput'],
+         timeout=1800, as_user='website-workspace')
+
+
+def _switch(version):
+    link = app_root() / 'current'
+    target = app_root() / 'releases' / version
+    temporary = app_root() / f'.current-{version}'
+    if temporary.exists() or temporary.is_symlink():
+        temporary.unlink()
+    os.symlink(target, temporary)
+    os.replace(temporary, link)
+
+
+def rollback(reason, previous_release, backup_file):
+    """按阶段回退：迁移前只需恢复服务；迁移后成对恢复数据库与媒体再切回旧版。"""
+    state = read_state()
+    print(f'[rollback] 原因: {reason}')
+    _systemctl('stop', 'website-workspace')
+    if state.get('migrated') and backup_file:
+        python = _venv_python(previous_release)
+        _run([python, str(Path(previous_release) / 'scripts' / 'backup.py'), 'restore',
+              str(backup_file), str(data_dir() / '.rollback-restore'),
+              '--media-directory', str(data_dir() / 'media')], timeout=1800)
+        for name in ('workspace.sqlite3-wal', 'workspace.sqlite3-shm'):
+            (data_dir() / name).unlink(missing_ok=True)
+    if previous_release:
+        _switch(Path(previous_release).name)
+    _systemctl('start', 'website-workspace')
+    if _health_ok(Path(previous_release).name):
+        clear_maintenance()
+        write_state(stage='rolled_back', reason=reason, writesReopened=True)
+        raise RuntimeError(f'升级失败已回退到 {Path(previous_release).name}：{reason}')
+    write_state(stage='rollback_failed', reason=reason)
+    raise RuntimeError(f'回退后健康检查仍失败，保持维护状态待人工处理：{reason}')
+
+
+def apply(version, backup_file=None):
+    """执行升级；任何阶段失败都按阶段回退并在状态文件记录。"""
+    previous = current_release()
+    previous_version = previous.name if previous else ''
+    state = read_state()
+    if state.get('writesReopened') and state.get('stage') not in (None, 'complete'):
+        raise RuntimeError('上次升级已恢复写入；如需再次回退请人工确认，禁止自动用旧备份覆盖新数据')
+
+    staging = app_root() / 'releases' / f'.staging-{version}'
+    if not staging.exists():
+        notes = precheck(version)
+        staging = Path(notes['staging'])
+    write_state(stage='verified', target=version, previous=previous_version)
+    set_maintenance('upgrading')
+    timers = _enabled_timers()
+    write_state(stage='maintenance_on', timers=timers)
+    try:
+        if backup_file is None:
+            backup_file = create_backup()
+        write_state(stage='backed_up', backup=str(backup_file))
+        restore_probe = verify_backup(backup_file)
+        write_state(stage='backup_verified', restoreProbe=restore_probe)
+
+        _systemctl('stop', 'website-workspace')
+        target = install_release(staging, version)
+        write_state(stage='installed', release=str(target))
+
+        _migrate(target)
+        write_state(stage='migrated', migrated=True)
+        _switch(version)
+        write_state(stage='switched', switched=True)
+
+        _systemctl('start', 'website-workspace')
+        if not _health_ok(version):
+            rollback('新版启动或健康检查失败', previous, backup_file)
+        for timer in timers:
+            _systemctl('start', timer)
+        clear_maintenance()
+        write_state(stage='complete', completedAt=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+                    writesReopened=True, health='ok')
+        return {'version': version, 'previous': previous_version, 'backup': str(backup_file),
+                'restoreProbe': restore_probe, 'timers': timers}
+    except Exception as exc:  # noqa: BLE001 - 统一走回退并记录
+        write_state(stage='failed', error=str(exc)[:400])
+        rollback(str(exc)[:300], previous, backup_file)
+        raise

@@ -1,5 +1,5 @@
 from django.urls import path, re_path, include
-from workspace import identity, library, organization, extension, transfer, extension_v2, extension_v3, preview, extension_info, icons
+from workspace import identity, library, organization, extension, transfer, extension_v2, extension_v3, preview, extension_info, icons, updates
 from workspace.frontend import frontend
 from workspace.downloads import extension_zip
 from workspace.native_bookmarks import import_batch
@@ -53,6 +53,7 @@ urlpatterns = [
     path('api/extension/v3/captures/<str:capture_id>/icon', extension_v3.icon_upload),
     path('api/extension/options', extension_info.options),
     path('api/extension/release', extension_info.release),
+    path('api/update/status', updates.status),
     path('api/extension/bookmarks/import', import_batch),
     re_path(r'^(?P<path>.*)$', frontend),
 ]

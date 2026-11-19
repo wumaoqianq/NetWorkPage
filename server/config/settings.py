@@ -13,7 +13,8 @@ if not SECRET_KEY:
     raise ImproperlyConfigured('生产环境必须显式设置 SECRET_KEY')
 ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=['localhost', '127.0.0.1', 'testserver'])
 INSTALLED_APPS = ['django.contrib.auth', 'django.contrib.contenttypes', 'django.contrib.sessions', 'workspace.apps.WorkspaceConfig', 'enhancements']
-MIDDLEWARE = ['django.middleware.security.SecurityMiddleware', 'django.contrib.sessions.middleware.SessionMiddleware',
+MIDDLEWARE = ['django.middleware.security.SecurityMiddleware', 'workspace.upgrade.MaintenanceMiddleware',
+              'django.contrib.sessions.middleware.SessionMiddleware',
               'django.middleware.common.CommonMiddleware', 'django.middleware.csrf.CsrfViewMiddleware',
               'django.contrib.auth.middleware.AuthenticationMiddleware',
               'django.middleware.clickjacking.XFrameOptionsMiddleware', 'workspace.middleware.ApiMiddleware']
