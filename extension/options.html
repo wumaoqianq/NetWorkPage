@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>网站工作台 · 扩展设置</title><link rel="stylesheet" href="styles.css"></head>
+<body class="options">
+  <header><img src="icons/icon-48.png" width="40" height="40" alt=""><div><h1>网站工作台 · 扩展设置</h1><p>连接自己的工作台，随手收藏有用的网站</p></div></header>
+  <main>
+    <section class="card"><h2>连接账号</h2><p id="connection" class="connection">正在读取连接…</p><p id="expiry" class="muted"></p><p id="pause" class="error"></p>
+      <form id="pair-form">
+        <label for="server">工作台服务器根地址</label><input id="server" type="url" required placeholder="https://workspace.example.com" autocomplete="url">
+        <p class="hint">正式服务须 HTTPS；本机开发可用 http://127.0.0.1:4173 或 http://localhost:4173。</p>
+        <div class="columns"><div><label for="code">5 分钟有效的配对码</label><input id="code" required maxlength="100" autocomplete="off" placeholder="从网页登录后的设置生成"></div><div><label for="device-name">设备名</label><input id="device-name" required maxlength="100" value="我的浏览器" autocomplete="off"></div></div>
+        <p class="hint">点击连接时，浏览器只请求此服务器的访问权限。配对成功后，使用独立 30 天设备凭据。</p>
+        <div class="actions"><button id="pair" class="primary" type="submit">授权此服务器并连接</button><button id="disconnect" type="button">断开本地连接</button></div>
+      </form>
+      <p class="hint">断开只移除本地凭据，保留待同步项。要撤销服务器凭据，请打开网页登录，在设置的扩展设备中撤销此设备。</p><button id="open-workspace" class="quiet">打开工作台管理 / 撤销设备</button>
+    </section>
+    <p id="message" role="status" aria-live="polite"></p>
+    <section class="card"><h2>自动素材</h2><p class="hint">以下修改按当前服务器和账号即时保存。只在打开插件或收藏时采集，不后台监控浏览。</p><label class="check"><input type="checkbox" id="preference-auto-preview" checked>默认自动保存当前页面预览</label><label class="check"><input type="checkbox" id="preference-remember-category">记住上次分类（默认关闭，避免误分）</label><p class="hint">截图可能包含当前登录内容；当前页预览不会标为网站首页。</p></section>
+    <section class="card"><div class="section-title"><h2>扩展版本</h2><button id="check-release">检查兼容版本</button></div><p id="release-status" class="muted">当前版本 1.3.3；检查失败不会影响收藏。</p><p class="hint">更新前先等待或保留队列，备份旧目录后解压覆盖，并在原扩展条目点击重新加载。不要先卸载，以免删除本地队列。</p></section>
+    <section class="card"><h2>一键导入当前浏览器收藏</h2><p>不用寻找或导出数据文件。打开导入页后由你授权读取书签，先在本机预览，再确认保存到连接的账号。</p><a href="bookmarks.html">打开浏览器收藏导入</a></section>
+    <section class="card"><div class="section-title"><h2>本地待同步</h2><button id="retry">重试当前账号</button></div><p id="queue-count" class="muted"></p><p class="hint">队列绑定原服务器与原账号。切换账号不会转投旧收藏；配对回同一账号可继续同步。</p><div id="queue-list"></div><button id="delete-all" class="danger" disabled>删除全部本地待同步项</button></section>
+    <section class="card"><h2>权限与数据</h2><p>普通收藏仅读取当前标签页地址与标题。只有你在导入页点击授权后，才读取当前浏览器的书签；不会改动原收藏。</p><p>不扫描历史、不读取 Cookie、不上传页面正文、不自动导入或双向同步。设备凭据只存在扩展本机存储。断网待同步和已确认导入的进度会保留，关闭或卸载前请先检查。</p></section>
+  </main><script src="options.js" type="module"></script>
+</body></html>

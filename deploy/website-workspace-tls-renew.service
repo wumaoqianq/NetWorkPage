@@ -1,0 +1,17 @@
+[Unit]
+Description=Renew the public IP certificate for Website Workspace
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/website-workspace
+ExecStart=/usr/bin/flock -w 240 /var/lib/website-workspace/maintenance.lock /opt/website-workspace/.certbot-venv/bin/certbot renew --cert-name website-workspace-ip --quiet --no-random-sleep-on-renew --deploy-hook /usr/local/sbin/website-workspace-renew-tls
+UMask=0077
+MemoryMax=160M
+CPUQuota=25%
+Nice=10
+TimeoutStartSec=600
+PrivateTmp=true
+NoNewPrivileges=true

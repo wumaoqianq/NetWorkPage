@@ -1,0 +1,31 @@
+# 依赖与构建产物：发布包单独构建，源码历史不保存可再生成的产物
+node_modules/
+dist/
+.vite/
+# 扩展发行清单由打包脚本生成（含每次构建的 sizeBytes/sha256），不进源码历史
+extension/release.json
+extension/.release.json.pending
+
+# 真实配置与密钥：只提交 .env.example
+.env*
+!.env.example
+
+# 本机环境、运行期数据、备份、构建输出
+.venv/
+.local/
+data/
+release/
+backups/
+worktrees/
+.worktrees/
+
+# 数据库与临时文件
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+__pycache__/
+*.pyc
+
+# 本地截图证据（真实页面内容，不入库）
+prototype/qa/*.png
+prototype/qa/*.jpg

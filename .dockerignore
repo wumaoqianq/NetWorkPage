@@ -1,0 +1,12 @@
+.git
+.venv
+.local
+.env*
+release
+backups
+**/node_modules
+**/__pycache__
+**/*.pyc
+**/*.sqlite3*
+prototype/qa
+prototype/reference

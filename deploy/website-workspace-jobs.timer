@@ -1,0 +1,11 @@
+[Unit]
+Description=Process up to ten Website Workspace jobs every ten minutes
+
+[Timer]
+OnBootSec=5m
+OnUnitInactiveSec=10m
+RandomizedDelaySec=30s
+Unit=website-workspace-jobs.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily delayed orphan media cleanup for Website Workspace
+
+[Timer]
+OnCalendar=*-*-* 04:20:00
+RandomizedDelaySec=15m
+Persistent=true
+Unit=website-workspace-media-cleanup.service
+
+[Install]
+WantedBy=timers.target

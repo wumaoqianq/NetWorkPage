@@ -1,0 +1,14 @@
+# 统一换行为 LF：Windows 开发机构建、Linux 部署，避免 systemd 单元/脚本被转成 CRLF
+* text=auto eol=lf
+
+# 二进制资源不做换行转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.zip binary
+*.gz binary
+*.sqlite3 binary

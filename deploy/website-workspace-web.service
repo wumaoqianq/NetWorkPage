@@ -1,0 +1,25 @@
+[Unit]
+Description=Website Workspace public IP HTTPS entry
+After=network.target website-workspace.service
+Wants=website-workspace.service
+
+[Service]
+Type=simple
+ExecStartPre=/usr/sbin/nginx -t -c /etc/nginx/website-workspace.conf
+ExecStart=/usr/sbin/nginx -c /etc/nginx/website-workspace.conf -g "daemon off;"
+ExecReload=/bin/kill -HUP $MAINPID
+KillSignal=SIGQUIT
+TimeoutStopSec=30
+Restart=on-failure
+RestartSec=5
+RuntimeDirectory=website-workspace-web
+UMask=0077
+MemoryMax=64M
+TasksMax=16
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/nginx
+
+[Install]
+WantedBy=multi-user.target

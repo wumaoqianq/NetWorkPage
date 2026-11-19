@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "网站工作台 · 快速收藏",
+  "version": "1.10.0",
+  "description": "点击工具栏小弹窗收藏当前页：选分类、写备注，截图/图标自动取得；留在当前网页，不打开新标签页。",
+  "minimum_chrome_version": "120",
+  "permissions": ["activeTab", "storage", "alarms", "scripting"],
+  "optional_permissions": ["bookmarks"],
+  "optional_host_permissions": ["https://*/*", "http://*/*"],
+  "background": { "service_worker": "service-worker.js", "type": "module" },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "收藏到网站工作台",
+    "default_icon": { "16": "icons/icon-16.png", "32": "icons/icon-32.png", "48": "icons/icon-48.png", "128": "icons/icon-128.png" }
+  },
+  "icons": { "16": "icons/icon-16.png", "32": "icons/icon-32.png", "48": "icons/icon-48.png", "128": "icons/icon-128.png" },
+  "options_ui": { "page": "options.html", "open_in_tab": true },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": { "default": "Alt+Shift+S", "mac": "Alt+Shift+S" },
+      "description": "打开当前页面的收藏弹窗"
+    }
+  },
+  "content_security_policy": { "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'" }
+}
