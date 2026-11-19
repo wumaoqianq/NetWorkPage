@@ -367,45 +367,88 @@ def _switch(version):
     os.replace(temporary, link)
 
 
+def _unique_path(path):
+    """失败现场路径：已存在时追加序号，避免同一时间戳多次回退冲突。"""
+    path = Path(path)
+    if not path.exists():
+        return path
+    index = 1
+    while True:
+        candidate = path.with_name(f'{path.name}-{index}')
+        if not candidate.exists():
+            return candidate
+        index += 1
+
+
 def rollback(reason, previous_release, backup_file):
-    """按阶段回退：迁移前只需恢复服务；迁移后成对恢复数据库与媒体再切回旧版。"""
+    """按阶段回退：迁移前只需恢复服务；迁移后成对恢复数据库与媒体再切回旧版。
+
+    任何一步失败都记录并继续尽力恢复可用性；成功恢复旧版后清除维护标记并禁止自动再次回退。
+    """
     state = read_state()
     print(f'[rollback] 原因: {reason}')
-    _systemctl('stop', 'website-workspace')
-    if state.get('migrated') and backup_file:
-        # 先成对恢复到旁路目录并校验，再原子替换；失败现场另存，绝不用未校验数据覆盖线上
-        stamp = time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())
-        restore_dir = data_dir() / f'.rollback-restore-{stamp}'
-        restored = _restore_into(backup_file, restore_dir, release=previous_release)
-        data = data_dir()
-        for name in ('workspace.sqlite3-wal', 'workspace.sqlite3-shm'):
-            (data / name).unlink(missing_ok=True)
-        database = data / 'workspace.sqlite3'
-        if database.exists():
-            os.replace(database, data / f'workspace.sqlite3.failed-{stamp}')
-        os.replace(restored['database'], database)
-        media = data / 'media'
-        if media.exists():
-            os.replace(media, data / f'media.failed-{stamp}')
-        if restored['media'].exists():
-            os.replace(restored['media'], media)
-        shutil.rmtree(restored['workdir'], ignore_errors=True)
-        shutil.rmtree(restored['media'], ignore_errors=True)
-        _run(['chown', '-R', 'website-workspace:website-workspace', str(data)], timeout=600, check=False)
-        write_state(stage='rollback_restored', rollbackStamp=stamp,
-                    rollbackMediaFiles=restored['mediaFiles'])
-    if previous_release:
-        _switch(Path(previous_release).name)
-    _systemctl('start', 'website-workspace')
-    if _health_ok(Path(previous_release).name):
-        clear_maintenance()
-        migrated = bool(read_state().get('migrated'))
-        write_state(stage='rolled_back', reason=reason, writesReopened=migrated,
-                    rollbackRestoredData=migrated)
-        raise RuntimeError(f'升级失败已回退到 {Path(previous_release).name}：{reason}')
-    write_state(stage='rollback_failed', reason=reason)
-    raise RuntimeError(f'回退后健康检查仍失败，保持维护状态待人工处理：{reason}')
+    write_state(rollbackAttempted=True, rollbackReason=reason[:300])
+    problems = []
+    data = data_dir()
 
+    try:
+        _systemctl('stop', 'website-workspace')
+        # 新版崩溃循环会让 systemd 进入 start-limit，必须先清除失败计数
+        _run(['systemctl', 'reset-failed', 'website-workspace'], timeout=120, check=False)
+    except Exception as exc:  # noqa: BLE001
+        problems.append(f'停止服务失败: {exc}')
+
+    if state.get('migrated') and backup_file:
+        try:
+            stamp = time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())
+            restored = _restore_into(backup_file, data / f'.rollback-restore-{stamp}',
+                                     release=previous_release)
+            for name in ('workspace.sqlite3-wal', 'workspace.sqlite3-shm'):
+                (data / name).unlink(missing_ok=True)
+            database = data / 'workspace.sqlite3'
+            if database.exists():
+                os.replace(database, _unique_path(data / f'workspace.sqlite3.failed-{stamp}'))
+            os.replace(restored['database'], database)
+            media = data / 'media'
+            if media.exists():
+                os.replace(media, _unique_path(data / f'media.failed-{stamp}'))
+            if restored['media'].exists():
+                os.replace(restored['media'], media)
+            shutil.rmtree(restored['workdir'], ignore_errors=True)
+            _run(['chown', '-R', 'website-workspace:website-workspace', str(data)],
+                 timeout=600, check=False)
+            write_state(stage='rollback_restored', rollbackStamp=stamp,
+                        rollbackMediaFiles=restored['mediaFiles'])
+        except Exception as exc:  # noqa: BLE001
+            problems.append(f'恢复备份失败: {exc}')
+
+    if previous_release:
+        try:
+            _switch(Path(previous_release).name)
+        except Exception as exc:  # noqa: BLE001
+            problems.append(f'切回旧版失败: {exc}')
+
+    try:
+        _run(['systemctl', 'reset-failed', 'website-workspace'], timeout=120, check=False)
+        _systemctl('start', 'website-workspace')
+    except Exception as exc:  # noqa: BLE001
+        problems.append(f'启动旧版失败: {exc}')
+
+    healthy = bool(previous_release) and _health_ok(Path(previous_release).name)
+    if healthy:
+        clear_maintenance()
+        write_state(stage='rolled_back', reason=reason[:300], problems=problems,
+                    writesReopened=bool(state.get('migrated')),
+                    rollbackRestoredData=bool(state.get('migrated')))
+        message = f'升级失败已回退到 {Path(previous_release).name}：{reason}'
+        if problems:
+            message += '；回退过程问题: ' + '; '.join(problems)[:300]
+        raise RuntimeError(message)
+
+    # 旧版也起不来：保持维护状态（写请求 503）但保证服务进程已尝试启动，等待人工处理
+    write_state(stage='rollback_failed', reason=reason[:300], problems=problems)
+    problem_text = '; '.join(problems)[:300]
+    raise RuntimeError(f'回退后健康检查仍失败，保持维护状态待人工处理：{reason}；问题: {problem_text}')
 
 def apply(version, backup_file=None):
     """执行升级；任何阶段失败都按阶段回退并在状态文件记录。"""
@@ -440,17 +483,27 @@ def apply(version, backup_file=None):
         _switch(version)
         write_state(stage='switched', switched=True)
 
+        _run(['systemctl', 'reset-failed', 'website-workspace'], timeout=120, check=False)
         _systemctl('start', 'website-workspace')
         if not _health_ok(version):
             rollback('新版启动或健康检查失败', previous, backup_file)
         for timer in timers:
             _systemctl('start', timer)
         clear_maintenance()
+        final = read_state()
+        for stale in ('error', 'reason', 'problems', 'rollbackReason'):
+            final.pop(stale, None)
+        state_path().write_text(json.dumps(final, ensure_ascii=False, indent=2), encoding='utf-8')
         write_state(stage='complete', completedAt=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
                     writesReopened=True, health='ok')
         return {'version': version, 'previous': previous_version, 'backup': str(backup_file),
                 'restoreProbe': restore_probe, 'timers': timers}
     except Exception as exc:  # noqa: BLE001 - 统一走回退并记录
+        current_state = read_state()
+        if current_state.get('rollbackAttempted'):
+            # 回退过程中自身抛出的异常：不再重复回退，避免二次破坏现场
+            write_state(stage='failed', error=str(exc)[:400])
+            raise
         write_state(stage='failed', error=str(exc)[:400])
         rollback(str(exc)[:300], previous, backup_file)
         raise
