@@ -280,34 +280,39 @@ def install_release(staging, version):
     return target
 
 
+def _restore_into(backup_file, target, release=None):
+    """用备份脚本恢复到一个尚不存在的 target；媒体默认恢复到 <target>.media 兄弟目录。"""
+    target = Path(target)
+    media_root = Path(str(target) + '.media')
+    python = _venv_python(release or current_release())
+    _run([python, str(Path(release or current_release()) / 'scripts' / 'backup.py'),
+          'restore', str(backup_file), str(target)],
+         timeout=1800, as_user='website-workspace')
+    database = target / 'workspace.sqlite3'
+    if not database.exists():
+        raise RuntimeError('恢复未得到数据库文件')
+    code, output = _run(['sqlite3', str(database), 'pragma integrity_check;'], timeout=120, check=False)
+    if 'ok' not in output:
+        raise RuntimeError(f'恢复数据库完整性检查失败: {output[-300:]}')
+    media_files = sum(1 for _ in media_root.rglob('*') if _.is_file()) if media_root.exists() else 0
+    return {'root': target, 'database': database, 'media': media_root, 'mediaFiles': media_files}
+
+
 def verify_backup(backup_file):
-    """实际试恢复一次加密备份到临时目录，确认数据库与媒体可还原。"""
+    """实际试恢复一次加密备份到临时目录，确认数据库与媒体均可还原。"""
     temporary = Path(tempfile.mkdtemp(prefix='ww-restore-'))
-    target = temporary / 'restored'
     try:
-        python = _venv_python(current_release())
-        _run([python, str(current_release() / 'scripts' / 'backup.py'), 'restore',
-              str(backup_file), str(target),
-              '--media-directory', str(target / 'media'),
-              '--env-file', ENV_FILE],
-             timeout=900, as_user='website-workspace')
-        database = target / 'workspace.sqlite3'
-        if not database.exists():
-            raise RuntimeError('试恢复未得到数据库文件')
-        code, output = _run(['sqlite3', str(database), 'pragma integrity_check;'], timeout=120, check=False)
-        if 'ok' not in output:
-            raise RuntimeError(f'试恢复数据库完整性检查失败: {output[-300:]}')
-        media = target / 'media'
-        media_files = sum(1 for _ in media.rglob('*') if _.is_file()) if media.exists() else 0
-        return {'database': str(database), 'mediaFiles': media_files, 'integrity': 'ok'}
+        result = _restore_into(backup_file, temporary / 'restored')
+        return {'database': str(result['database']), 'mediaFiles': result['mediaFiles'],
+                'integrity': 'ok'}
     finally:
         shutil.rmtree(temporary, ignore_errors=True)
 
 
 def create_backup():
     python = _venv_python(current_release())
-    _run([python, str(current_release() / 'scripts' / 'backup.py'), 'create',
-          '--env-file', ENV_FILE],
+    _run([python, str(current_release() / 'scripts' / 'backup.py'), '--env-file', ENV_FILE,
+          'create'],
          timeout=1800, as_user='website-workspace')
     backups = sorted((data_dir() / 'backups').glob('*.wwb'), key=lambda p: p.stat().st_mtime)
     if not backups:
@@ -356,13 +361,27 @@ def rollback(reason, previous_release, backup_file):
     print(f'[rollback] 原因: {reason}')
     _systemctl('stop', 'website-workspace')
     if state.get('migrated') and backup_file:
-        python = _venv_python(previous_release)
-        _run([python, str(Path(previous_release) / 'scripts' / 'backup.py'), 'restore',
-              str(backup_file), str(data_dir() / '.rollback-restore'),
-              '--media-directory', str(data_dir() / 'media'),
-              '--env-file', ENV_FILE], timeout=1800)
+        # 先成对恢复到旁路目录并校验，再原子替换；失败现场另存，绝不用未校验数据覆盖线上
+        stamp = time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())
+        restore_dir = data_dir() / f'.rollback-restore-{stamp}'
+        shutil.rmtree(restore_dir, ignore_errors=True)
+        shutil.rmtree(Path(str(restore_dir) + '.media'), ignore_errors=True)
+        restored = _restore_into(backup_file, restore_dir, release=previous_release)
+        data = data_dir()
         for name in ('workspace.sqlite3-wal', 'workspace.sqlite3-shm'):
-            (data_dir() / name).unlink(missing_ok=True)
+            (data / name).unlink(missing_ok=True)
+        database = data / 'workspace.sqlite3'
+        if database.exists():
+            os.replace(database, data / f'workspace.sqlite3.failed-{stamp}')
+        os.replace(restored['database'], database)
+        media = data / 'media'
+        if media.exists():
+            os.replace(media, data / f'media.failed-{stamp}')
+        if restored['media'].exists():
+            os.replace(restored['media'], media)
+        _run(['chown', '-R', 'website-workspace:website-workspace', str(data)], timeout=600, check=False)
+        write_state(stage='rollback_restored', rollbackStamp=stamp,
+                    rollbackMediaFiles=restored['mediaFiles'])
     if previous_release:
         _switch(Path(previous_release).name)
     _systemctl('start', 'website-workspace')
