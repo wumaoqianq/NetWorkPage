@@ -9,8 +9,10 @@
 | 版本 | 提交 | 说明 |
 | --- | --- | --- |
 | [v1.10.0-rc.10](https://github.com/wumaoqianq/NetWorkPage/releases/tag/v1.10.0-rc.10) | `115bb0563926c3c6f0a9ed74d7af1e9c1bf96176` | **当前线上版本**，含在线升级与回退加固 |
-| [v1.10.0-rc.8](https://github.com/wumaoqianq/NetWorkPage/releases/tag/v1.10.0-rc.8) | `0a78a259488fd73bbdb5b594e2fe5bd0e7a809da` | 首次成功升级所用的上一版本 |
+| v1.10.0-rc.8 | `0a78a259488fd73bbdb5b594e2fe5bd0e7a809da` | 首次成功升级的中间版本；验收期间因本机到 GitHub 连接不稳定未单独发布，仅本机 `release/` 留档 |
 | [v1.10.0-rc.1](https://github.com/wumaoqianq/NetWorkPage/releases/tag/v1.10.0-rc.1) | `f00c0ad41c6e61ad88dead685b7aab45d6992201` | 初始部署版本 |
+
+> 验收过程中还发布过 rc.2–rc.7 用于逐项缺陷修复验证，均为预发布，稳定轨道默认忽略；权威交付版本为 **rc.10**。
 
 rc.10 资产与哈希：
 
