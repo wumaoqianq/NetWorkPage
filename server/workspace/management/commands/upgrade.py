@@ -35,7 +35,7 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS('预检通过（未改动线上数据或服务）'))
             self.stdout.write(f'当前版本: {notes["currentVersion"]} -> 目标: {notes["version"]}')
             self.stdout.write(f'tag {notes["tag"]}  commit {notes["commit"]}  轨道 {notes["track"]}')
-            self.stdout.write(f'扩展版本: {notes["extensionVersion"]}')
+            self.stdout.write(f'扩展版本: {notes["extensionVersion"]}（已校验服务包内嵌 ZIP 与清单同字节）')
             for asset in notes['assets']:
                 self.stdout.write(f'  资产 {asset["name"]} {asset["bytes"]} B sha256={asset["sha256"][:16]}…')
             self.stdout.write(f'暂存目录: {notes["staging"]}')

@@ -176,14 +176,14 @@ def fetch_release_assets(version, workdir):
     extension_assets = [a for a in manifest['assets'] if a['kind'] == 'extension']
     if not server_assets or not extension_assets:
         raise release_manifest.ManifestError('清单必须同时包含 server 与 extension 资产')
-    for asset in (server_assets[0], extension_assets[0]):
-        if asset['name'] not in assets:
-            raise release_manifest.ManifestError(f'Release 缺少资产 {asset["name"]}')
-        _download(assets[asset['name']], workdir / asset['name'], timeout=600)
-        release_manifest.verify_asset(workdir / asset['name'], asset)
-    return manifest, {'dir': workdir, 'server': workdir / server_assets[0]['name'],
-                      'extension': workdir / extension_assets[0]['name'],
-                      'manifest': manifest}
+    # 只下载服务包；扩展 ZIP 在服务包内，解包后按清单哈希校验同字节，避免多一次易失败的跨境下载
+    server_asset = server_assets[0]
+    if server_asset['name'] not in assets:
+        raise release_manifest.ManifestError(f'Release 缺少资产 {server_asset["name"]}')
+    _download(assets[server_asset['name']], workdir / server_asset['name'], timeout=900)
+    release_manifest.verify_asset(workdir / server_asset['name'], server_asset)
+    return manifest, {'dir': workdir, 'server': workdir / server_asset['name'],
+                      'extensionAsset': extension_assets[0], 'manifest': manifest}
 
 
 def safe_extract(archive, destination, max_members=4000, max_bytes=256 * 1024 * 1024):
@@ -238,6 +238,12 @@ def precheck(version, workdir=None):
                      'extension/release.json', 'scripts/backup.py'):
         if not (staging / required).exists():
             raise release_manifest.ManifestError(f'服务包缺少运行期文件: {required}')
+    # 服务包内嵌扩展 ZIP 必须与清单登记的扩展资产同字节
+    extension_asset = paths['extensionAsset']
+    embedded = staging / 'extension' / 'dist' / extension_asset['name']
+    if not embedded.is_file():
+        raise release_manifest.ManifestError(f'服务包缺少内嵌扩展 ZIP: {extension_asset["name"]}')
+    release_manifest.verify_asset(embedded, extension_asset)
     notes = {
         'version': version,
         'tag': manifest['tag'],
