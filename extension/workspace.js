@@ -11,7 +11,7 @@ const publicConnection = connection => {
 };
 
 export function createWorkspace({ config, outbox, request, bookmarks, now = Date.now,
-  extensionVersion = () => '1.10.0' }) { // 运行期由 SW 注入真实 manifest 版本
+  extensionVersion = () => '1.10.1' }) { // 运行期由 SW 注入真实 manifest 版本
   async function readConfig() { return config.read(); }
   async function status() {
     const cfg = await readConfig();

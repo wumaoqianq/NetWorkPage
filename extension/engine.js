@@ -5,7 +5,7 @@ import { createStateRepair } from './engine-repair.js';
 import { normalizeServer, captureUrl, makeCapture, enqueue, eligibleItems, eligibleAttachments, eligibleIcons,
   acknowledge, failCapture, failAttachment, resumeQueue, retryQueue, queueSummary, attachmentStats, belongsTo } from './queue.js';
 const identity = connection => `${connection.server}|${connection.user.id}`;
-const extensionVersion = () => globalThis.chrome?.runtime?.getManifest?.().version || '1.10.0';
+const extensionVersion = () => globalThis.chrome?.runtime?.getManifest?.().version || '1.10.1';
 // 存储、IndexedDB 与网络由适配器注入，旧队列和新附件状态机均可独立验证。
 export function createEngine({ read, write, request, attachments = null, iconTasks = null, now = Date.now }) {
   const assetFlusher = createAssetJobFlusher({ attachments, request, notifyIconTasks, write, now });

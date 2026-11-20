@@ -3,13 +3,16 @@ import { Copy, DownloadSimple, Link, Trash } from '@phosphor-icons/react';
 import { api } from '../api.js';
 
 const formatBytes = value => value ? `${(value / 1024).toFixed(1)} KiB` : '未知';
+const downloadPath = '/downloads/website-workspace-extension.zip';
 
-export function DevicesSettings({ notify }) {
+export function DevicesSettings({ notify, presence }) {
   const [devices, setDevices] = useState([]);
   const [release, setRelease] = useState(null);
   const [pairing, setPairing] = useState(null);
   const [error, setError] = useState('');
   const [releaseError, setReleaseError] = useState('');
+  const [downloadError, setDownloadError] = useState('');
+  const [downloading, setDownloading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [revoke, setRevoke] = useState(null);
   const [steps, setSteps] = useState(true);
@@ -25,10 +28,27 @@ export function DevicesSettings({ notify }) {
   }, [pairing]);
   async function load() {
     setError(''); setReleaseError('');
-    try { setDevices((await api.request('/api/extension/devices')).devices); }
-    catch (failure) { setError(failure.message); }
-    try { setRelease(await api.request('/api/extension/release')); }
-    catch (failure) { setReleaseError(failure.message); }
+    await Promise.allSettled([
+      api.request('/api/extension/devices').then(data => setDevices(data.devices)).catch(failure => setError(failure.message)),
+      api.request('/api/extension/release').then(setRelease).catch(failure => setReleaseError(failure.message)),
+    ]);
+  }
+  async function downloadExtension() {
+    setDownloading(true); setDownloadError('');
+    try {
+      const response = await fetch(downloadPath, { credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(20000) });
+      if (!response.ok) throw new Error(`下载失败（HTTP ${response.status}），请稍后重试。`);
+      const blob = await response.blob();
+      if (blob.type !== 'application/zip' || !blob.size) throw new Error('站点没有返回有效的 ZIP 安装包，请稍后重试。');
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = response.headers.get('Content-Disposition')?.match(/website-workspace-extension-\d+\.\d+\.\d+\.zip/)?.[0] || 'website-workspace-extension.zip';
+      document.body.append(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      notify('安装包已交给浏览器下载。下载后请解压并加载扩展。');
+    } catch (failure) { setDownloadError(failure.message || '下载失败，请重试。'); }
+    finally { setDownloading(false); }
   }
   async function createCode() {
     setBusy(true); setError('');
@@ -49,11 +69,14 @@ export function DevicesSettings({ notify }) {
   const remaining = pairing ? Math.max(0, Math.ceil((Date.parse(pairing.expiresAt) - now) / 1000)) : 0;
   return <div className="extension-center">
     <section className="extension-hero"><h3>选分类、写备注，其他交给软件</h3><p>新版扩展自动准备名称、简介、网站图标和当前页预览；素材失败不阻塞文字收藏。普通收藏直接入库并出现在首页。</p></section>
-    <section className="detail-section release-card"><div className="section-heading"><div><h3>扩展安装包</h3><p className="muted">{release ? `版本 ${release.version} · ${new Date(release.releasedAt).toLocaleDateString('zh-CN')} · ${formatBytes(release.sizeBytes)}` : '正在读取发行清单…'}</p></div><a className={`primary-button ${!release ? 'disabled-link' : ''}`} href={release?.downloadPath || '/downloads/website-workspace-extension.zip'} download={release ? undefined : false} onClick={event => { if (!release) event.preventDefault(); else notify('下载已开始，接下来解压并加载；这不表示扩展已安装'); }}><DownloadSimple size={18} />下载扩展 ZIP</a></div>
+    <section className="detail-section release-card"><div className="section-heading"><div><h3>扩展安装包</h3><p className="muted">{release ? `版本 ${release.version} · ${new Date(release.releasedAt).toLocaleDateString('zh-CN')} · ${formatBytes(release.sizeBytes)}` : releaseError ? '暂时无法读取发行清单' : '正在读取发行清单…'}</p></div><button type="button" className="primary-button" disabled={downloading} onClick={downloadExtension}><DownloadSimple size={18} />{downloading ? '正在获取安装包…' : '下载扩展 ZIP'}</button></div>
+      <p className="muted small-text" role="status">{presence?.status === 'installed' ? `已检测到当前浏览器的扩展 ${presence.version}。是否配对请在扩展弹窗查看。` : presence?.status === 'not-detected' ? '当前浏览器未检测到扩展；如果已安装，请重新加载扩展并刷新此页。' : presence?.status === 'checking' ? '正在检测当前浏览器…' : '当前浏览器或站点无法自动检测，可按下方步骤安装。'}</p>
+      {presence && presence.status !== 'unavailable' && <button type="button" className="text-button" onClick={presence.recheck}>重新检测扩展</button>}
+      {downloadError && <p className="form-error" role="alert">{downloadError} <a href={downloadPath}>打开直接下载链接</a></p>}
       <div className="release-facts"><span>支持：桌面 Chrome、Edge</span><span>最低浏览器：{release?.minBrowserVersion || '未知'}</span><span>协议：{release ? `${release.protocolRange.min}–${release.protocolRange.max}` : '未知'}</span><span>API：{release ? '兼容' : '待检查'}</span></div>
       <p className="muted small-text">其他 Chromium 浏览器可能兼容，尚未验收；Firefox / Safari 不在本期支持范围。ZIP 不含服务器配置、账号或令牌。</p>
       {release && <div className="hash-row"><code>SHA-256: {release.sha256}</code><button className="icon-button" aria-label="复制扩展包 SHA-256" onClick={() => copy(release.sha256, 'SHA-256')}><Copy size={18} /></button></div>}
-      {releaseError && <p className="form-error" role="alert">{releaseError} 安装帮助仍可使用，请稍后重试下载。</p>}
+      {releaseError && <p className="form-error" role="alert">发行清单读取失败，仍可直接下载安装包。 <button type="button" className="text-button" onClick={load}>重试发行信息</button></p>}
       <div className="settings-actions"><button className="text-button" onClick={() => setSteps(!steps)}>{steps ? '收起安装步骤' : '安装步骤'}</button><button className="text-button" disabled={!release} onClick={() => setNotes(!notes)}>查看本版变更</button></div>
       {notes && release && <p className="release-notes">{release.releaseNotes}</p>}
     </section>

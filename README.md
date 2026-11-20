@@ -8,6 +8,8 @@
 
 ## 从 GitHub Release 安装或升级
 
+普通用户可从网站首页的扩展提示或「设置 → 浏览器扩展」下载 Edge / Chrome 扩展；ZIP 本身无需登录。扩展 1.10.1 起会在 `wumaoqian.top` 及回环开发站点响应安装检测，只返回版本。检测不到时仍可按安装指引操作，配对始终需要登录。
+
 1. 从 [GitHub Releases](https://github.com/wumaoqianq/NetWorkPage/releases)下载指定版本的 `website-workspace-<tag>.tar.gz`、签名清单和校验文件。不要用 GitHub 自动生成的 Source code 归档部署。`rc` 是预发布，稳定轨道默认忽略。
 2. 新装及旧部署迁移见 [Debian 部署说明](deploy/README.md)。安装固定发布公钥、初始化独立的数据目录和环境配置，部署包中已预构建前端，服务器不用 Node。
 3. 管理员可在工作台「设置 → 系统更新」查看服务器检查结果。在服务器用 `checkupdate` 查询，用 `upgrade --release-version <版本> --precheck` 预检；执行时通过 `scripts/manage_env.py` 读取部署配置。完整命令、离线资产入口与回退边界见[更新与回退](deploy/README.md#更新与回退)。

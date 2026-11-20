@@ -6,6 +6,7 @@ from workspace.native_bookmarks import import_batch
 
 urlpatterns = [
     path('downloads/website-workspace-extension.zip', extension_zip),
+    re_path(r'^downloads/website-workspace-extension-(?P<version>[0-9]+\.[0-9]+\.[0-9]+)\.zip$', extension_zip),
     path('api/enhancements/', include('enhancements.urls')),
     path('api/auth/session', identity.session),
     path('api/auth/setup', identity.setup),

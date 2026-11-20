@@ -29,7 +29,7 @@ else:
 
 PROJECT_ID = 'website-workspace'
 MANIFEST_FORMAT = 1
-API_COMPAT = {'minExtension': '1.0.0', 'currentExtension': '1.10.0'}
+API_COMPAT = {'minExtension': '1.0.0'}
 
 INCLUDE_DIRS = ('server', 'scripts', 'deploy')
 INCLUDE_FILES = ('requirements.txt', 'requirements.lock', 'README.md', 'LICENSE', 'LICENSE.md')
@@ -220,7 +220,7 @@ def build_release(root, output, version, tag, track, extension_version,
         'releaseNotesUrl': f'https://github.com/wumaoqianq/NetWorkPage/releases/tag/{tag}',
         'minUpgradeFrom': '1.0.0',
         'platform': {'os': 'linux', 'arch': ['x86_64', 'aarch64'], 'python': '>=3.11'},
-        'extension': {'version': extension_version, 'api': API_COMPAT},
+        'extension': {'version': extension_version, 'api': {**API_COMPAT, 'currentExtension': extension_version}},
         'assets': [],
         'notes': '预发布候选；稳定轨道默认忽略预发布。' if track == 'prerelease' else '稳定版本。',
     }

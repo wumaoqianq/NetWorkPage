@@ -17,6 +17,8 @@ import { ScreenshotViewer } from './components/ScreenshotViewer.jsx';
 import { DisplaySettings } from './components/DisplaySettings.jsx';
 import { useCardPreferences } from './useCardPreferences.js';
 import { modalManager } from './dialogStack.js';
+import { useExtensionPresence } from './useExtensionPresence.js';
+import { ExtensionInstallNotice } from './components/ExtensionInstallNotice.jsx';
 
 const formatDay = value => {
   const date = new Date(value);
@@ -25,6 +27,7 @@ const formatDay = value => {
 
 export function App({ demo = false, user, onLogout }) {
   const workspace = useWorkspace({ demo });
+  const extensionPresence = useExtensionPresence(!demo);
   const cardPreferences = useCardPreferences({ user, demo, onError: workspace.setToast });
   const layout = useLayoutPreferences({ user, demo, onError: workspace.setToast });
   const viewport = useViewport();
@@ -137,6 +140,7 @@ export function App({ demo = false, user, onLogout }) {
       </header>
       <main className="workspace">
         <div className="hero-copy"><h1>{title}</h1><p>{subtitle}</p></div>
+        <ExtensionInstallNotice visible={!demo && view === 'home'} presence={extensionPresence} onGuide={guide} />
         <div className="search-field"><MagnifyingGlass size={21} /><input ref={search} value={query} onChange={event => { setQuery(event.target.value); if (event.target.value && chip !== '全部') setChip('全部'); }} onKeyDown={event => { if (event.key === 'Escape' && query && !modalManager.hasOpen()) { event.stopPropagation(); setQuery(''); } }} aria-label="搜索网站" placeholder="搜索名称、简介、备注或标签" />{query ? <button type="button" className="icon-button" aria-label="清空搜索" onClick={() => setQuery('')}><X size={19} /></button> : <kbd>Ctrl&nbsp; K</kbd>}</div>
         {!isCollectionOverview && <div className="filter-toolbar">
           <div className="filter-chips-wrap"><div className="filter-chips" role="group" aria-label="按分类筛选">
@@ -163,7 +167,7 @@ export function App({ demo = false, user, onLogout }) {
     {selected && <SiteDetail site={selected} demo={demo} onClose={closeDetail} onEdit={edit} onOpen={open} onPatch={workspace.patch} notify={workspace.setToast} onRefresh={workspace.refresh} onRefreshIcon={workspace.refreshIcon} onRefetchIcon={workspace.refetchIcon} onUploadIcon={workspace.uploadLocalIcon} />}
     {screenshotSite && <ScreenshotViewer site={screenshotSite} onClose={closeScreenshot} onRefreshMetadata={workspace.refresh} onGuide={guide} />}
     {editor && <SiteForm site={editor.id ? editor : null} categories={workspace.categories} collections={workspace.collections} demo={demo} onClose={closeEditor} onSave={workspace.save} />}
-    {settings && <SettingsDialog workspace={workspace} user={user} demo={demo} initialTab={typeof settings === 'string' ? settings : 'data'} onClose={closeSettings} onLogout={onLogout} />}
+    {settings && <SettingsDialog workspace={workspace} user={user} demo={demo} extensionPresence={extensionPresence} initialTab={typeof settings === 'string' ? settings : 'data'} onClose={closeSettings} onLogout={onLogout} />}
     {pendingOpen && <Dialog title="确认访问入口" onClose={closeOpen}><div className="confirm-body"><p>你即将打开 <strong>{pendingOpen.site.name}</strong> 的「{pendingOpen.entry.label}」。</p><code className="url-preview">{pendingOpen.entry.url}</code><p className="muted">{pendingOpen.entry.url.includes('example.com') ? '这是保留的示例地址，用于展示云端入口。你可以先编辑成自己的地址。' : `访问条件：${pendingOpen.entry.scope}。本机地址指向当前设备，局域网地址需要连接对应网络。`}</p></div><footer className="dialog-actions"><button type="button" className="secondary-button" onClick={closeOpen}>取消</button><button type="button" className="primary-button" onClick={() => { workspace.visit(pendingOpen.site, pendingOpen.entry); setPendingOpen(null); }}><ArrowSquareOut size={17} />继续打开</button></footer></Dialog>}
     {pendingDelete && <Dialog title="永久删除这个网站？" onClose={closeDelete}><div className="confirm-body"><p>「{pendingDelete.name}」的资料将永久删除，此操作无法撤销。</p></div><footer className="dialog-actions"><button type="button" className="secondary-button" onClick={closeDelete}>取消</button><button type="button" className="danger-button" onClick={async () => { if (await workspace.remove(pendingDelete.id)) setPendingDelete(null); }}>确认删除</button></footer></Dialog>}
     {pendingPreview && <Dialog title="移除这张截图？" onClose={closePreview}><div className="confirm-body"><p>只会移除「{pendingPreview.name}」的当前预览图，网站名称、地址、简介和备注都会保留。</p></div><footer className="dialog-actions"><button type="button" className="secondary-button" onClick={closePreview}>取消</button><button type="button" className="danger-button" onClick={async () => { if (await workspace.removePreview(pendingPreview)) setPendingPreview(null); }}>确认移除截图</button></footer></Dialog>}

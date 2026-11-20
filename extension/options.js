@@ -64,7 +64,7 @@ function render(state) {
   const release = state.release;
   $('#release-status').textContent = release?.version
     ? `当前版本 ${release.currentVersion} / 可用版本 ${release.version} · 协议 ${release.protocolRange?.min}–${release.protocolRange?.max}`
-    : '当前版本 1.10.0；兼容检查失败不会影响收藏。';
+    : `当前版本 ${chrome.runtime.getManifest().version}；兼容检查失败不会影响收藏。`;
   $('#disconnect').disabled = !connection;
   $('#open-workspace').disabled = !connection;
   if (!$('#server').value && connection) $('#server').value = connection.server;

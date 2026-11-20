@@ -6,7 +6,7 @@ from django.core.exceptions import SuspiciousFileOperation
 
 
 def frontend(request, path=''):
-    if path.startswith('api/'):
+    if path.startswith(('api/', 'downloads/')):
         return JsonResponse({'error': '接口不存在', 'code': 'not_found'}, status=404)
     root = settings.FRONTEND_ROOT
     try:

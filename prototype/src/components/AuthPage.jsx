@@ -55,6 +55,7 @@ export function AuthPage({ session, register, invite, recovery, onAuthenticated,
         {joining && <div className="auth-switch"><span>已有账号？</span><a className="text-button" href="/">返回登录</a></div>}
         <p className="auth-footnote">网站的账号说明与你的登录账号分开管理。第三方网站密码继续由独立密码管理器保存。</p>
         {!creating && <p className="auth-help">无法登录？请联系管理员生成一次性恢复链接。</p>}
+        {!creating && <a className="text-button auth-retry" href="/downloads/website-workspace-extension.zip">下载浏览器扩展</a>}
         <button className="text-button auth-retry" type="button" onClick={onRetry}>重新检查服务状态</button>
       </form>
     </section><footer className="auth-page-footer">你的收藏，你的空间。</footer>

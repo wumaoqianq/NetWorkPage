@@ -11,7 +11,7 @@ from workspace.models import Category, Collection
 
 
 @csrf_exempt
-@api(['GET'], public=True, bearer='optional', rate=60)
+@api(['GET'], public=True, rate=60)
 def release(request):
     path = settings.BASE_DIR / 'extension' / 'release.json'
     try:

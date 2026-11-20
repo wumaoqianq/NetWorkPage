@@ -4,7 +4,7 @@ import { $, send, showMessage } from './ui.js';
 import { compressInPage } from './capture-compress.js';
 
 // 与 manifest.json 同步：识别「目录已更新但浏览器未重新加载」的混合态。
-const BUILD_VERSION = '1.10.0';
+const BUILD_VERSION = '1.10.1';
 const MAX_RAW = 8 * 1024 * 1024;
 let draftId = null, submitted = false, pollTimer = null, lastPhase = '';
 

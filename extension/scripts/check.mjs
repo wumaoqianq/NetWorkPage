@@ -10,7 +10,11 @@ assert.equal(manifest.background.type, 'module');
 assert.deepEqual(manifest.permissions, ['activeTab', 'storage', 'alarms', 'scripting']);
 assert.deepEqual(manifest.optional_permissions, ['bookmarks']);
 assert.equal(manifest.host_permissions, undefined);
-assert.equal(manifest.content_scripts, undefined);
+assert.deepEqual(manifest.content_scripts, [{
+  matches: ['https://wumaoqian.top/*', 'https://www.wumaoqian.top/*', 'http://127.0.0.1/*', 'http://localhost/*'],
+  js: ['workspace-presence.js'], run_at: 'document_start',
+}]);
+await access(resolve(root, 'workspace-presence.js'));
 assert.equal(manifest.externally_connectable, undefined);
 const popupSource = await readFile(resolve(root, 'popup.js'), 'utf8');
 assert.match(popupSource, new RegExp(`const BUILD_VERSION = '${manifest.version.replaceAll('.', '\\.')}'`),

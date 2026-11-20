@@ -1,12 +1,17 @@
 {
   "manifest_version": 3,
   "name": "网站工作台 · 快速收藏",
-  "version": "1.10.0",
+  "version": "1.10.1",
   "description": "点击工具栏小弹窗收藏当前页：选分类、写备注，截图/图标自动取得；留在当前网页，不打开新标签页。",
   "minimum_chrome_version": "120",
   "permissions": ["activeTab", "storage", "alarms", "scripting"],
   "optional_permissions": ["bookmarks"],
   "optional_host_permissions": ["https://*/*", "http://*/*"],
+  "content_scripts": [{
+    "matches": ["https://wumaoqian.top/*", "https://www.wumaoqian.top/*", "http://127.0.0.1/*", "http://localhost/*"],
+    "js": ["workspace-presence.js"],
+    "run_at": "document_start"
+  }],
   "background": { "service_worker": "service-worker.js", "type": "module" },
   "action": {
     "default_popup": "popup.html",
