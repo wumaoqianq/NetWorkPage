@@ -13,6 +13,7 @@
 .auth-form .field small { display: block; margin-top: 7px; color: #596776; font-size: 10px; font-weight: 400; }
 .auth-form .auth-footnote { font-size: 10px; margin: 18px 0 0; color: #596776; }
 .auth-form .auth-help { font-size: 10px; margin: 16px 0 0; }
+.auth-switch { display: flex; justify-content: center; align-items: baseline; gap: 6px; margin-top: 14px; font-size: 13px; color: #596776; }
 .auth-retry { font-size: 10px; margin-top: 15px; }
 .auth-page-footer { color: #596776; text-align: center; font-size: 11px; }
 .connection-state { min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 24px; padding: 35px; text-align: center; }

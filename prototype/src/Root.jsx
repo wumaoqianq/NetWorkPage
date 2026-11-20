@@ -36,6 +36,6 @@ export function Root() {
   if (share) return <PublicShare token={share} />;
   if (demo) return <App demo user={{ name: '林知夏', email: 'demo@example.com', isAdmin: false }} />;
   if (error || !session) return <main className="connection-state"><img className="brand-mark" src="/assets/workspace-mark.svg" alt="" /><h1>{error ? '暂时无法连接工作台' : '正在打开你的工作台'}</h1><p>{error || '正在检查会话和服务状态…'}</p>{error && <><button className="primary-button" onClick={load}><ArrowCounterClockwise size={18} />重新连接</button><a className="text-button" href="/?demo=1">查看独立演示</a></>}</main>;
-  if (!session.user) return <AuthPage session={session} invite={parameters.get('invite') || parameters.get('token')} recovery={parameters.get('recover')} onAuthenticated={authenticated} onRetry={load} />;
+  if (!session.user) return <AuthPage session={session} register={parameters.get('register') === '1'} invite={parameters.get('invite') || parameters.get('token')} recovery={parameters.get('recover')} onAuthenticated={authenticated} onRetry={load} />;
   return <App key={session.user.id} user={session.user} onLogout={async () => { await api.request('/api/auth/logout', { method: 'POST', body: {} }); await load(); }} />;
 }
