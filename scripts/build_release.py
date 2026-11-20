@@ -12,6 +12,7 @@
 """
 import argparse
 import base64
+import gzip
 import hashlib
 import io
 import json
@@ -123,10 +124,10 @@ def release_files(root, extension_zip):
 def archive_bytes(files, root):
     """固定 mtime/属主/权限的可复现 tar.gz；路径一律 POSIX。"""
     buffer = io.BytesIO()
-    with tarfile.open(fileobj=buffer, mode='w:gz', format=tarfile.GNU_FORMAT) as bundle:
-        for path in files:
+    with gzip.GzipFile(fileobj=buffer, mode='wb', mtime=0) as compressed, \
+            tarfile.open(fileobj=compressed, mode='w', format=tarfile.GNU_FORMAT) as bundle:
+        for path, content in files:
             relative = path.relative_to(root).as_posix()
-            content = path.read_bytes()
             info = tarfile.TarInfo(f'{PROJECT_ID}/{relative}')
             info.size = len(content)
             info.mode = 0o644
@@ -169,9 +170,14 @@ def sign_manifest(manifest_bytes, key):
 def build_release(root, output, version, tag, track, extension_version,
                   commit=None, allow_dirty=False, now=None):
     root, output = Path(root).resolve(), Path(output).resolve()
+    if not allow_dirty:
+        head = git_head(root)
+        if (commit and commit != head) or not git_clean(root):
+            raise RuntimeError('发布必须从标记的干净提交构建（调试可用 --allow-dirty）')
     commit = commit or git_head(root)
-    if not allow_dirty and not git_clean(root):
-        raise RuntimeError('工作区有未提交改动；发布必须从干净提交构建（调试可用 --allow-dirty）')
+    for required in ('server/manage.py', 'prototype/dist/client/index.html', 'requirements.lock'):
+        if not (root / required).is_file():
+            raise FileNotFoundError(f'缺少发布输入：{required}')
 
     # 1) 用源码构建扩展 ZIP，保证与服务包内 ZIP 同字节、版本一致
     manifest_path = root / 'extension' / 'manifest.json'
@@ -186,16 +192,19 @@ def build_release(root, output, version, tag, track, extension_version,
     # 2) 收集并逐个审查输入字节
     secrets = local_secret_values(root)
     files = release_files(root, extension_zip)
+    reviewed = []
     for path in files:
-        inspect_content(path.relative_to(root), path.read_bytes(), secrets)
+        content = path.read_bytes()
+        inspect_content(path.relative_to(root), content, secrets)
+        reviewed.append((path, content))
 
     # 3) 生成服务包；扩展 ZIP 同时作为发布资产复制到输出目录（同字节）
-    payload = archive_bytes(files, root)
+    payload = archive_bytes(reviewed, root)
     output.mkdir(parents=True, exist_ok=True)
     server_name = f'{PROJECT_ID}-{tag}.tar.gz'
     (output / server_name).write_bytes(payload)
     server_sha = hashlib.sha256(payload).hexdigest()
-    ext_bytes = extension_zip.read_bytes()
+    ext_bytes = dict(reviewed)[extension_zip]
     (output / extension_zip.name).write_bytes(ext_bytes)
 
     # 4) 清单（同一候选构建的版本/tag/资产）
@@ -213,11 +222,10 @@ def build_release(root, output, version, tag, track, extension_version,
         'platform': {'os': 'linux', 'arch': ['x86_64', 'aarch64'], 'python': '>=3.11'},
         'extension': {'version': extension_version, 'api': API_COMPAT},
         'assets': [],
-        'notes': '预发布候选：四阶段与 1.10.0 未宣称全面验收完成；稳定轨道默认忽略预发布。',
+        'notes': '预发布候选；稳定轨道默认忽略预发布。' if track == 'prerelease' else '稳定版本。',
     }
     manifest['assets'].append({
         'name': server_name, 'kind': 'server', 'bytes': len(payload), 'sha256': server_sha})
-    ext_bytes = extension_zip.read_bytes()
     manifest['assets'].append({
         'name': extension_zip.name, 'kind': 'extension', 'bytes': len(ext_bytes),
         'sha256': hashlib.sha256(ext_bytes).hexdigest()})

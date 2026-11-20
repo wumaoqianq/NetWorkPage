@@ -9,7 +9,7 @@ workspace.example.com {
         reverse_proxy 127.0.0.1:8000
     }
     handle {
-        root * /opt/website-workspace/prototype/dist/client
+        root * /opt/website-workspace/current/prototype/dist/client
         try_files {path} /index.html
         file_server
     }

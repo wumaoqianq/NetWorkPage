@@ -1,14 +1,11 @@
 """工作台只读展示升级信息：当前版本、可用版本、检查时间、最近升级状态（管理员可见）。"""
-from django.conf import settings
+from workspace import upgrade
+from workspace.http import api
+from workspace.management.commands.checkupdate import load_cache
 
-from workspace import release_manifest, upgrade
-from workspace.http import api, ApiError
 
-
-@api(['GET'])
+@api(['GET'], admin=True)
 def status(request):
-    if not request.user.is_staff:
-        raise ApiError('需要管理员权限', 'forbidden', 403)
     state = upgrade.read_state()
     payload = {
         'currentVersion': upgrade.current_version(),
@@ -20,24 +17,17 @@ def status(request):
             'target': state.get('target', ''),
             'previous': state.get('previous', ''),
             'updatedAt': state.get('updatedAt', ''),
-            'backup': state.get('backup', ''),
-            'error': state.get('error', ''),
             'writesReopened': bool(state.get('writesReopened')),
+            'timerFailures': state.get('timerFailures', []),
         },
         'lastCheck': None,
         'available': None,
         'upstream': 'unknown',
         'commands': {
-            'check': 'manage.py checkupdate --track stable',
-            'precheck': 'manage.py upgrade --release-version <版本> --precheck',
-            'upgrade': 'manage.py upgrade --release-version <版本>',
+            'check': 'sudo /opt/website-workspace/current/.venv/bin/python /opt/website-workspace/current/scripts/manage_env.py --env-file /etc/website-workspace.env checkupdate --refresh',
         },
     }
-    try:
-        from workspace.management.commands.checkupdate import load_cache
-        cached = load_cache()
-    except Exception:  # noqa: BLE001 - 缓存读取失败不影响只读展示
-        cached = None
+    cached = load_cache(track=payload['track'], current=payload['currentVersion'], repo=payload['repo'])
     if cached:
         payload['lastCheck'] = cached.get('checkedAt')
         payload['upstream'] = cached.get('status', 'unknown')

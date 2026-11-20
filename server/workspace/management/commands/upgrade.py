@@ -15,7 +15,7 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument('--release-version', required=True, help='目标版本，如 1.10.0-rc.3')
         parser.add_argument('--precheck', action='store_true', help='只做预检，不动线上数据或服务')
-        parser.add_argument('--backup', help='复用已有加密备份路径（默认现做一份并验证）')
+        parser.add_argument('--asset-dir', help='从本地目录读取带签名的原始 Release 资产')
         parser.add_argument('--json', action='store_true')
 
     def handle(self, *args, **options):
@@ -28,7 +28,10 @@ class Command(BaseCommand):
             raise CommandError(f'当前已经是 {version}，无需升级')
 
         if options['precheck']:
-            notes = upgrade.precheck(version)
+            try:
+                notes = upgrade.precheck(version, options['asset_dir'])
+            except (OSError, ValueError) as exc:
+                raise CommandError(f'预检失败：{exc}') from exc
             if options['json']:
                 self.stdout.write(json.dumps(notes, ensure_ascii=False, indent=2))
                 return
@@ -38,13 +41,12 @@ class Command(BaseCommand):
             self.stdout.write(f'扩展版本: {notes["extensionVersion"]}（已校验服务包内嵌 ZIP 与清单同字节）')
             for asset in notes['assets']:
                 self.stdout.write(f'  资产 {asset["name"]} {asset["bytes"]} B sha256={asset["sha256"][:16]}…')
-            self.stdout.write(f'暂存目录: {notes["staging"]}')
-            self.stdout.write('执行升级: manage.py upgrade --release-version ' + version)
+            self.stdout.write('执行升级时会重新校验原始资产。')
             return
 
         self.stdout.write(f'开始升级 {upgrade.current_version()} -> {version}（进入维护窗口）')
         try:
-            result = upgrade.apply(version, backup_file=options['backup'])
+            result = upgrade.apply(version, options['asset_dir'])
         except release_manifest.ManifestError as exc:
             raise CommandError(f'清单/签名/资产校验失败，未改动线上: {exc}') from exc
         except Exception as exc:  # noqa: BLE001
@@ -57,4 +59,6 @@ class Command(BaseCommand):
         self.stdout.write(f'备份: {result["backup"]}')
         self.stdout.write(f'试恢复校验: {result["restoreProbe"]}')
         self.stdout.write(f'已恢复定时器: {", ".join(result["timers"]) or "无"}')
+        if result['timerFailures']:
+            self.stderr.write(self.style.WARNING('以下定时器需要人工恢复: ' + ', '.join(result['timerFailures'])))
         self.stdout.write('状态: ' + json.dumps(upgrade.read_state(), ensure_ascii=False))

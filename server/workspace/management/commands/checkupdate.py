@@ -15,10 +15,11 @@ def cache_path():
     return Path(settings.DATA_DIR) / 'update-cache.json'
 
 
-def load_cache():
+def load_cache(*, track=None, current=None, repo=None):
     try:
         data = json.loads(cache_path().read_text(encoding='utf-8'))
-        if time.time() - float(data.get('checkedAtEpoch', 0)) < CACHE_SECONDS:
+        if (isinstance(data, dict) and data.get('track') == track and data.get('current') == current
+                and data.get('repo') == repo and 0 <= time.time() - float(data.get('checkedAtEpoch', 0)) < CACHE_SECONDS):
             return data
     except (OSError, ValueError, TypeError):
         pass
@@ -29,7 +30,7 @@ def save_cache(payload):
     payload = dict(payload, checkedAtEpoch=time.time(),
                    checkedAt=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()))
     try:
-        cache_path().write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
+        upgrade.atomic_json(cache_path(), payload)
     except OSError:
         pass
     return payload
@@ -47,15 +48,18 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         track = options['track']
         current = upgrade.current_version()
-        cached = None if options['refresh'] else load_cache()
-        if cached and cached.get('track') == track and cached.get('current') == current:
+        repo = upgrade.release_repo()
+        cached = None if options['refresh'] else load_cache(track=track, current=current, repo=repo)
+        if current == 'unknown':
+            raise CommandError('当前部署未配置版本目录，无法比较发布版本。')
+        if cached:
             result = cached
             result['cached'] = True
         else:
             try:
-                releases = release_manifest.fetch_releases(upgrade.release_repo())
+                releases = release_manifest.fetch_releases(repo)
             except Exception as exc:  # noqa: BLE001 - 上游不可用不应影响本地功能
-                result = {'status': 'unavailable', 'current': current, 'track': track,
+                result = {'status': 'unavailable', 'current': current, 'track': track, 'repo': repo,
                           'error': f'{type(exc).__name__}: {exc}'[:300],
                           'checkedAt': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
                 save_cache(result)
@@ -64,7 +68,7 @@ class Command(BaseCommand):
                 result = {'status': 'update' if picked else 'current',
                           'current': current, 'track': track,
                           'latest': picked or None,
-                          'repo': upgrade.release_repo(),
+                          'repo': repo,
                           'checkedAt': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
                 save_cache(result)
             result['cached'] = False

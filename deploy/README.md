@@ -12,10 +12,10 @@ npm ci
 npm run build
 cd ..
 .\.venv\Scripts\python.exe -m unittest discover -s scripts/tests -v
-.\.venv\Scripts\python.exe scripts/build_release.py
+.\.venv\Scripts\python.exe scripts/build_release.py --version 1.10.0-rc.11 --tag v1.10.0-rc.11 --track prerelease --extension-version 1.10.0
 ```
 
-Linux/macOS 开发机使用 `.venv/bin/python`。脚本要求 `server/manage.py`、`prototype/dist/client/index.html` 和 `requirements.txt` 存在，输出 `release/website-workspace-时间.tar.gz` 和同名 `.sha256`。包中含后台、预构建前端、扩展、部署脚本、依赖锁和文档。排除 `.env*`、数据库、备份、依赖目录、测试/截图及 Git；检查常见密钥特征、硬编码秘密和根目录环境文件中已知的秘密。扫描是多层防误打包措施，发布前仍须审查新增的私有文件种类。
+Linux/macOS 开发机使用 `.venv/bin/python`。从干净的待发布提交运行；示例版本替换为实际候选。输出版本化服务包、相同字节的配套扩展 ZIP、签名清单和 `SHA256SUMS`。包中含后台、预构建前端、部署脚本和依赖锁。签名私钥仅用于发布机，部署时通过可信渠道设置固定公钥，勿信任替换包自带的新公钥。发布前检查归档文件清单和公开文档。
 
 单独生成配置；将示例域名换成真实域名，文件不能跟发布包一起公开：
 
@@ -39,14 +39,18 @@ install -d -o website-workspace -g website-workspace -m 0700 /var/lib/website-wo
 
 如果用户已存在，跳过 `useradd`。`apt install caddy` 使用 Debian 仓库包；如需 Caddy 官方仓库包，按[官方 Debian 安装说明](https://caddyserver.com/docs/install#debian-ubuntu-raspbian)配置，安装会自动运行其默认服务，因此域名与防火墙应先准备好。
 
-将两个发布文件放入服务器受保护的临时目录，在该目录验 SHA256；下面文件名替换成真实文件名：
+从 [GitHub Releases](https://github.com/wumaoqianq/NetWorkPage/releases)取得服务包、清单和签名。首次安装服务器还没有项目验签命令时，在受信工作机按「更新与回退」中的 `--precheck --asset-dir` 使用独立取得的公钥验签，并记录已验证的服务包 SHA-256。上传到服务器受保护的临时目录，按这个已验证的摘要复核传输结果；不能只把未经认证的 `SHA256SUMS` 当签名用。下面是新安装布局示例，用真实版本和文件名替换：
 
 ```sh
-sha256sum -c website-workspace-时间.tar.gz.sha256
-tar -tzf website-workspace-时间.tar.gz
-tar -xzf website-workspace-时间.tar.gz --strip-components=1 -C /opt/website-workspace
-python3 -m venv /opt/website-workspace/.venv
-/opt/website-workspace/.venv/bin/pip install --only-binary=:all: --no-cache-dir -r /opt/website-workspace/requirements.txt
+version=1.10.0-rc.10
+target="/opt/website-workspace/releases/$version"
+install -d -m 0755 /opt/website-workspace/releases
+mkdir -m 0755 "$target"
+tar -xzf "website-workspace-v$version.tar.gz" --strip-components=1 -C "$target"
+python3 -m venv "$target/.venv"
+"$target/.venv/bin/pip" install --only-binary=:all: --no-cache-dir -r "$target/requirements.lock"
+ln -s "$target" /opt/website-workspace/current
+install -o root -g root -m 0644 /受保护临时目录/可信发布公钥.pem /etc/website-workspace-release.pem
 install -o root -g website-workspace -m 0640 /受保护临时目录/.env.local /etc/website-workspace.env
 ```
 
@@ -67,7 +71,7 @@ install -o root -g website-workspace -m 0640 /受保护临时目录/.env.local /
 迁移、检查使用同一个私有文件，避免误建另一份数据库：
 
 ```sh
-cd /opt/website-workspace
+cd /opt/website-workspace/current
 runuser -u website-workspace -- .venv/bin/python scripts/manage_env.py --env-file /etc/website-workspace.env migrate --noinput
 runuser -u website-workspace -- .venv/bin/python scripts/manage_env.py --env-file /etc/website-workspace.env check --deploy
 install -o root -g root -m 0644 deploy/website-workspace.service /etc/systemd/system/
@@ -75,7 +79,7 @@ install -o root -g root -m 0644 deploy/website-workspace-backup.service deploy/w
 install -o root -g root -m 0644 deploy/Caddyfile /etc/caddy/Caddyfile
 ```
 
-编辑 `/etc/caddy/Caddyfile` 中的域名，与环境文件一致。前端由 Caddy 直接读取 `/opt/website-workspace/prototype/dist/client`，API 反代回环 Gunicorn。
+编辑 `/etc/caddy/Caddyfile` 中的域名，与环境文件一致。前端由 Caddy 直接读取 `/opt/website-workspace/current/prototype/dist/client`，API 反代回环 Gunicorn。
 
 ```sh
 caddy validate --config /etc/caddy/Caddyfile
@@ -93,7 +97,7 @@ systemctl enable --now website-workspace-backup.timer
 仅在 `manage.py help runjobs` 存在且理解其外网抓取边界后启用；没有独立常驻 worker：
 
 ```sh
-cd /opt/website-workspace
+cd /opt/website-workspace/current
 install -o root -g root -m 0644 deploy/website-workspace-jobs.service deploy/website-workspace-jobs.timer /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now website-workspace-jobs.timer
@@ -138,7 +142,7 @@ journalctl -u website-workspace-backup.service --since today --no-pager
 恢复先到新文件，认证错误、损坏密文、无效 SQLite 或已有目标均失败；**工具不会覆盖数据库**：
 
 ```sh
-cd /opt/website-workspace
+cd /opt/website-workspace/current
 runuser -u website-workspace -- .venv/bin/python scripts/backup.py --env-file /etc/website-workspace.env restore /var/lib/website-workspace/backups/实际文件.sqlite3.wwb /var/lib/website-workspace/restore-check.sqlite3
 runuser -u website-workspace -- sqlite3 /var/lib/website-workspace/restore-check.sqlite3 'PRAGMA integrity_check;'
 runuser -u website-workspace -- sqlite3 /var/lib/website-workspace/restore-check.sqlite3 'SELECT count(*) FROM auth_user; SELECT count(*) FROM workspace_site;'
@@ -181,11 +185,20 @@ free -m
 
 ## 更新与回退
 
-1. 在开发机通过测试并重建前端，构建发布包；记录包 SHA256 和依赖锁版本。
-2. 服务器创建并验证一份加密备份；暂停启用的 timers、停止服务后，保留当前代码目录和整个旧数据库附件。
-3. 将新包解到新目录检查，不把 `.env.local` 或运行数据库放进代码目录；切换 `/opt/website-workspace` 至新代码，在该目录重新创建 venv 并安装锁定依赖。
-4. 使用原环境文件执行迁移和部署检查，启动后验登录、查询、写入、扩展收藏与备份，再恢复 timers。
-5. 发生错误则停应用，切回旧代码和旧 venv；涉及迁移时按上节把数据库和 WAL/SHM 整体回退。先验证再恢复入口。
+本节使用当前源码的升级接口；已发布的 rc.10 不包含 `--asset-dir`，不要手工预解包新资产并塞入旧版 `.staging-*`。GitHub 历史发布说明里的 `--version` 是误写，实际目标参数是 `--release-version`。
+
+新装或旧部署迁移时，将程序与独立 venv 安装在 `/opt/website-workspace/releases/<版本>/`，并使 `/opt/website-workspace/current` 指向该目录。系统服务和站点反向代理使用 `current`，数据库、媒体和环境配置保留在原位置。旧部署迁移须先备份并验证恢复；在维护窗口对齐 systemd 服务的 `WorkingDirectory`、`ExecStart`、作业 timer 和代理静态路径，验证应用及定时器后再开放。发布目录及公钥由 root 管理，应用账号只读；如果旧版程序目录曾归应用账号所有，先用已知可信的签名资产恢复代码，再从中运行管理员命令。
+
+```sh
+cd /opt/website-workspace/current
+sudo .venv/bin/python scripts/manage_env.py --env-file /etc/website-workspace.env checkupdate --refresh
+sudo .venv/bin/python scripts/manage_env.py --env-file /etc/website-workspace.env upgrade --release-version <目标版本> --precheck
+sudo .venv/bin/python scripts/manage_env.py --env-file /etc/website-workspace.env upgrade --release-version <目标版本>
+```
+
+若 GitHub 下载不稳定，把原始服务端归档、`release-manifest.json` 与签名 `.sig` 放到受控目录，在预检和执行命令上都加 `--asset-dir /path/to/assets`。每次都用独立固定公钥重新验证，不借用旧备份或过往解包结果。可安装并启用 `website-workspace-update-check.service` 和 `.timer`，定时刷新管理员面板缓存；调度失败不会中断收藏。
+
+执行时先在线准备新目录和依赖，再维护停写、停作业、创建并试恢复新备份，然后迁移、切换和验证。维护标记开启且应用进程在线时，写请求得到 `503`；进程停机期间也可能收到代理的 `502`，扩展会保留任务供重试。迁移一旦开始，任何异常都要成对恢复数据库与媒体；确认恢复和旧版健康均通过才重新开放。维护标记仍在或状态为 `rollback_failed` 时禁止直接重跑：检查 `/var/lib/website-workspace/upgrade-state.json`、systemd 日志和保留的失败现场。若已开放写入，先停写并保存现有数据库与媒体，再决定前滚或按[独立恢复演练](#备份与独立恢复演练)人工回退。不能用指定旧版本的升级命令代替人工回退。
 
 这里提供的 systemd/Caddy 文件尚未在真实 Debian 主机执行；本机只验证 Python 工具、测试和发布包。真实域名证书、网络、防火墙、Debian 服务权限及峰值资源需要部署时验证。
 

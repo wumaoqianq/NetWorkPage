@@ -1,0 +1,10 @@
+[Unit]
+Description=Refresh Website Workspace release information
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=4h
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

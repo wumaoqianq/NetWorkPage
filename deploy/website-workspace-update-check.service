@@ -1,0 +1,17 @@
+[Unit]
+Description=Check Website Workspace for a new release
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=website-workspace
+Group=website-workspace
+WorkingDirectory=/opt/website-workspace/current/server
+EnvironmentFile=/etc/website-workspace.env
+ExecStart=/opt/website-workspace/current/.venv/bin/python manage.py checkupdate --refresh
+TimeoutStartSec=45
+UMask=0022
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/website-workspace

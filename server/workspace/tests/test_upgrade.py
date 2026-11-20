@@ -1,8 +1,12 @@
 """在线升级的信任边界与维护期行为回归：清单校验、签名、版本选择、安全解包、503 维护。"""
 import io
+import shutil
+import sqlite3
 import tarfile
 import tempfile
+from contextlib import closing
 from pathlib import Path
+from unittest.mock import patch
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -184,6 +188,72 @@ class SafeExtractTests(TestCase):
             archive = self._archive(directory, {'big.bin': b'0' * 4096})
             with self.assertRaises(rm.ManifestError):
                 upgrade.safe_extract(archive, Path(directory) / 'out', max_bytes=1024)
+
+
+    def test_release_wrapper_is_removed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            archive = self._archive(directory, {'website-workspace/server/manage.py': b'x'})
+            target = Path(directory) / 'out'
+            upgrade.safe_extract(archive, target, wrapped=True)
+            self.assertEqual((target / 'server/manage.py').read_bytes(), b'x')
+
+
+class UpgradeRecoveryTests(TestCase):
+    def test_migration_failure_restores_committed_changes_before_reopening(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            previous = root / 'releases' / '1.10.0-rc.10'
+            previous.mkdir(parents=True)
+            database = root / 'catalog.sqlite3'
+            media = root / 'media'
+            media.mkdir()
+            (media / 'preview.webp').write_bytes(b'original')
+            with closing(sqlite3.connect(database)) as connection, connection:
+                connection.execute('CREATE TABLE test_bookmark (title TEXT)')
+                connection.execute("INSERT INTO test_bookmark VALUES ('original')")
+            snapshot = shutil.copyfile(database, root / 'snapshot.sqlite3')
+
+            def restore(backup, folder, **kwargs):
+                restored_media = folder / 'media'
+                restored_media.mkdir(parents=True)
+                (restored_media / 'preview.webp').write_bytes(b'original')
+                restored_db = shutil.copyfile(snapshot, folder / 'restored.sqlite3')
+                return {'database': restored_db, 'media': restored_media, 'workdir': folder, 'mediaFiles': 1}
+
+            def migrate(release):
+                self.assertTrue(upgrade.is_maintenance())
+                with closing(sqlite3.connect(database)) as connection, connection:
+                    connection.execute("UPDATE test_bookmark SET title = 'changed'")
+                (media / 'preview.webp').write_bytes(b'changed')
+                raise RuntimeError('after a committed migration')
+
+            def health(version):
+                self.assertEqual(version, previous.name)
+                self.assertTrue(upgrade.is_maintenance())
+                with closing(sqlite3.connect(database)) as connection:
+                    self.assertEqual(connection.execute('SELECT title FROM test_bookmark').fetchone(), ('original',))
+                self.assertEqual((media / 'preview.webp').read_bytes(), b'original')
+                return True
+
+            timer = 'website-workspace-jobs.timer'
+            with (override_settings(DATA_DIR=root, MEDIA_ROOT=media),
+                  patch.dict(upgrade.settings.DATABASES['default'], {'NAME': database}),
+                  patch.object(upgrade, 'app_root', return_value=root),
+                  patch.object(upgrade, 'current_release', return_value=previous),
+                  patch.object(upgrade, '_enabled_timers', return_value=[timer]),
+                  patch.object(upgrade, 'precheck'), patch.object(upgrade, 'install_release'),
+                  patch.object(upgrade, '_migrate', side_effect=migrate),
+                  patch.object(upgrade, 'create_backup', return_value=root / 'backup.wwb'),
+                  patch.object(upgrade, 'verify_backup', return_value={'integrity': 'ok'}),
+                  patch.object(upgrade, '_restore_into', side_effect=restore),
+                  patch.object(upgrade, '_systemctl') as systemctl, patch.object(upgrade, '_run'),
+                  patch.object(upgrade, '_switch'), patch.object(upgrade, '_health_ok', side_effect=health)):
+                with self.assertRaisesRegex(RuntimeError, '升级失败已回退'):
+                    upgrade._apply('1.10.0-rc.11', None)
+                self.assertEqual(upgrade.read_state()['stage'], 'rolled_back')
+                self.assertFalse(upgrade.is_maintenance())
+                systemctl.assert_any_call('stop', timer)
+                systemctl.assert_any_call('start', timer)
 
 
 @override_settings(DATA_DIR=tempfile.mkdtemp(prefix='ww-maint-'))
